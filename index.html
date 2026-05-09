@@ -36,14 +36,58 @@
         </div>
 
         <div id="help-overlay">
-            <div class="help-panel">
-                <h2>📜 Como Jogar</h2>
-                <p>🏰 Clique numa torre na loja e depois no campo para colocá-la.</p>
-                <p>⬆️ Clique numa torre colocada para Melhorar (até 3×) ou Vender (50%).</p>
-                <p>🧟 Impedira os zumbis de atravessarem o mapa!</p>
-                <p>⏸️ Use os botões de velocidade no topo para pausar ou acelerar.</p>
-                <p>🖱️ ESC fecha menus e seleções.</p>
-                <button id="help-close">Entendi!</button>
+            <div class="help-full">
+                <div class="help-header">
+                    <h2>Guia de Referência</h2>
+                    <button id="help-close" class="help-close-btn">✕</button>
+                </div>
+                <div class="help-tabs">
+                    <button class="help-tab active" data-tab="monsters">Monstros</button>
+                    <button class="help-tab" data-tab="weapons">Armas</button>
+                    <button class="help-tab" data-tab="strategy">Estratégia</button>
+                    <button class="help-tab" data-tab="howto">Como Jogar</button>
+                </div>
+                <div class="help-tab-content active" data-content="monsters">
+                    <div class="help-scroll">
+                        <div class="help-grid" id="help-monsters-grid"></div>
+                    </div>
+                </div>
+                <div class="help-tab-content" data-content="weapons">
+                    <div class="help-scroll">
+                        <div class="help-grid" id="help-weapons-grid"></div>
+                    </div>
+                </div>
+                <div class="help-tab-content" data-content="strategy">
+                    <div class="help-scroll">
+                        <div id="help-strategy-content"></div>
+                    </div>
+                </div>
+                <div class="help-tab-content" data-content="howto">
+                    <div class="help-scroll">
+                        <div class="howto-panel">
+                            <div class="howto-item">
+                                <span class="howto-icon">🏰</span>
+                                <span>Clique numa torre na loja e depois no campo para colocá-la.</span>
+                            </div>
+                            <div class="howto-item">
+                                <span class="howto-icon">⬆️</span>
+                                <span>Clique numa torre colocada para Melhorar (até 3×) ou Vender (50%).</span>
+                            </div>
+                            <div class="howto-item">
+                                <span class="howto-icon">🧟</span>
+                                <span>Impedir os zumbis de atravessarem o mapa!</span>
+                            </div>
+                            <div class="howto-item">
+                                <span class="howto-icon">⏸️</span>
+                                <span>Use os botões de velocidade no topo para pausar ou acelerar.</span>
+                            </div>
+                            <div class="howto-item">
+                                <span class="howto-icon">🖱️</span>
+                                <span>ESC fecha menus e seleções.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -63,6 +107,7 @@
             <div id="hamburger-menu">
                 <div class="hm-item" id="hm-restart">🔄 Reiniciar</div>
                 <div class="hm-item" id="hm-scores">🏆 Recordes</div>
+                <div class="hm-item" id="hm-help">📖 Ajuda</div>
             </div>
         </div>
 
