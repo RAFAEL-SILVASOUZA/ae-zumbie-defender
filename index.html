@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>AE Zombie Defender</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Patrick+Hand&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="hud">
+            <div class="stat money">💰 <span id="money">500</span></div>
+            <div class="stat score">🏆 <span id="score">0</span></div>
+            <div class="stat round-display">Round <span id="round">1</span></div>
+            <div id="speed-control">
+                <button data-speed="0" title="Pausar">❚❚</button>
+                <button data-speed="1" class="active" title="Velocidade normal">1x</button>
+                <button data-speed="2" title="Acelerar 2x">2x</button>
+                <button data-speed="3" title="Acelerar 3x">3x</button>
+                <button data-speed="4" title="Acelerar 4x">4x</button>
+            </div>
+            <div class="stat health">❤️ <span id="health">20</span></div>
+        </div>
+
+        <div class="canvas-frame">
+            <div class="canvas-wrap">
+                <canvas id="gameCanvas"></canvas>
+                <div id="round-banner"></div>
+                <div id="tower-menu"></div>
+                <div id="game-over"></div>
+            </div>
+        </div>
+
+        <div id="shop">
+            <div class="shop-item" data-type="spike" title="Espinhos - dano de contato (não atinge voadores)">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$5</span>
+            </div>
+            <div class="shop-item" data-type="pistol" title="Pistola - tiro básico">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$10</span>
+            </div>
+            <div class="shop-item" data-type="machinegun" title="Metralhadora - tiro rápido">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$30</span>
+            </div>
+            <div class="shop-item" data-type="poison" title="Veneno - desacelera e envenena">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$40</span>
+            </div>
+            <div class="shop-item" data-type="radar" title="Radar - alcance longo, dano alto">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$100</span>
+            </div>
+            <div class="shop-item" data-type="robot" title="Robô - automatizado, alto DPS">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$120</span>
+            </div>
+            <div class="shop-item" data-type="rocket" title="Lança-Foguetes - dano em área">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$150</span>
+            </div>
+            <div class="shop-item" data-type="tesla" title="Tesla - raios elétricos que saltam entre inimigos (mais forte)">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$200</span>
+            </div>
+        </div>
+
+        <div id="hint">Clique numa torre da loja e depois no campo · Clique numa torre colocada para Melhorar (até 3×) ou Vender (50%) · ESC fecha · Use o controle de velocidade no topo</div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>
