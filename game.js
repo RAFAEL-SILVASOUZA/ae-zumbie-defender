@@ -26,14 +26,14 @@ const COLORS = {
 };
 
 const TOWER_STATS = {
-    spike:      { range: 1.5, damage: 6,  fireRate: 1300, cost: 5,   ignoresFlying: true, label: 'Espinhos' },
-    pistol:     { range: 2.5, damage: 9,  fireRate: 800,  cost: 10,  label: 'Pistola' },
-    machinegun: { range: 3.0, damage: 11, fireRate: 380,  cost: 30,  label: 'Metralhadora' },
-    poison:     { range: 2.5, damage: 4,  fireRate: 700,  cost: 40,  slowFactor: 0.55, slowMs: 1400, label: 'Veneno' },
-    radar:      { range: 7.0, damage: 60, fireRate: 1500, cost: 100, label: 'Radar' },
-    robot:      { range: 3.5, damage: 22, fireRate: 550,  cost: 120, label: 'Robô' },
-    rocket:     { range: 4.0, damage: 30, fireRate: 1300, cost: 150, splashRadius: 1.3, label: 'Foguete' },
-    tesla:      { range: 4.0, damage: 80, fireRate: 1100, cost: 200, chains: 3, chainRange: 2.5, chainFalloff: 0.65, label: 'Tesla' }
+    spike:      { range: 1.5, damage: 6,  fireRate: 1300, cost: 5,   ignoresFlying: true, damageType: 'physical', label: 'Espinhos' },
+    pistol:     { range: 2.5, damage: 9,  fireRate: 800,  cost: 10,  damageType: 'physical', label: 'Pistola' },
+    machinegun: { range: 3.0, damage: 11, fireRate: 380,  cost: 30,  damageType: 'physical', label: 'Metralhadora' },
+    poison:     { range: 2.5, damage: 4,  fireRate: 700,  cost: 40,  slowFactor: 0.55, slowMs: 1400, damageType: 'poison', label: 'Veneno' },
+    radar:      { range: 7.0, damage: 60, fireRate: 1500, cost: 100, damageType: 'energy', label: 'Radar' },
+    robot:      { range: 3.5, damage: 22, fireRate: 550,  cost: 120, damageType: 'physical', label: 'Robô' },
+    rocket:     { range: 4.0, damage: 30, fireRate: 1300, cost: 150, splashRadius: 1.3, damageType: 'explosive', label: 'Foguete' },
+    tesla:      { range: 4.0, damage: 80, fireRate: 1100, cost: 200, chains: 3, chainRange: 2.5, chainFalloff: 0.65, damageType: 'energy', label: 'Tesla' }
 };
 
 const ZOMBIE_STATS = {
@@ -41,8 +41,8 @@ const ZOMBIE_STATS = {
     tank:     { hpMult: 2.6,  speedMult: 0.7, body: '#3a5d20', head: '#5b8a35', size: 1.3,  unlockRound: 2,  weight: 22,  horns: true, label: 'Tanque' },
     fast:     { hpMult: 0.55, speedMult: 1.7, body: '#a3cf52', head: '#c5e578', size: 0.78, unlockRound: 3,  weight: 28,  label: 'Rápido' },
     flying:   { hpMult: 0.85, speedMult: 1.2, body: '#7fa850', head: '#a3cf52', size: 0.95, unlockRound: 4,  weight: 16,  flying: true, label: 'Voador' },
-    skeleton: { hpMult: 0.75, speedMult: 1.05, body: '#d8d2c0', head: '#f0ebd8', size: 0.95, unlockRound: 5,  weight: 22,  skeletal: true, slowImmune: true, label: 'Esqueleto' },
-    ghost:    { hpMult: 0.5,  speedMult: 1.0, body: '#e3e8e1', head: '#f6f8f3', size: 1.0,  unlockRound: 6,  weight: 18,  ghost: true, dodgeChance: 0.45, label: 'Fantasma' },
+    skeleton: { hpMult: 0.75, speedMult: 1.05, body: '#d8d2c0', head: '#f0ebd8', size: 0.95, unlockRound: 5,  weight: 22,  skeletal: true, slowImmune: true, immuneTo: ['physical'], label: 'Esqueleto' },
+    ghost:    { hpMult: 0.5,  speedMult: 1.0, body: '#e3e8e1', head: '#f6f8f3', size: 1.0,  unlockRound: 6,  weight: 18,  ghost: true, dodgeChance: 0.45, immuneTo: ['physical'], label: 'Fantasma' },
     poison:   { hpMult: 1.0,  speedMult: 0.95, body: '#7a4f8a', head: '#a578b3', size: 1.0,  unlockRound: 7,  weight: 16,  poisonous: true, label: 'Venenoso' },
     bomber:   { hpMult: 0.7,  speedMult: 0.9, body: '#a14431', head: '#c4654f', size: 1.0,  unlockRound: 8,  weight: 14,  bomb: true, label: 'Bombista' },
     ice:      { hpMult: 1.6,  speedMult: 0.85, body: '#5d8db0', head: '#85b3d4', size: 1.4, unlockRound: 9,  weight: 14,  frosty: true, slowImmune: true, freezesTowers: true, label: 'Gelo' },
@@ -621,9 +621,11 @@ class Game {
         this.drawGrid();
         this.drawHover();
 
-        const sortedZombies = [...this.zombies].sort((a, b) => a.screenY - b.screenY);
-        for (const z of sortedZombies) z.draw(this.ctx);
+        const groundZombies = this.zombies.filter(z => !ZOMBIE_STATS[z.type]?.flying).sort((a, b) => a.screenY - b.screenY);
+        const airZombies = this.zombies.filter(z => ZOMBIE_STATS[z.type]?.flying).sort((a, b) => a.screenY - b.screenY);
+        for (const z of groundZombies) z.draw(this.ctx);
         for (const t of this.towers) t.draw(this.ctx);
+        for (const z of airZombies) z.draw(this.ctx);
         for (const p of this.projectiles) p.draw(this.ctx);
 
         for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
@@ -884,15 +886,24 @@ class Tower {
         const falloff = stats.chainFalloff;
         const damaged = new Set([target]);
         const points = [{ x: cx, y: cy }, { x: target.screenX, y: target.screenY }];
+        const damageType = stats.damageType;
 
-        target.applyDamage(this.damage, game);
+        const tStats = ZOMBIE_STATS[target.type];
+        if (!tStats?.immuneTo?.includes(damageType)) {
+            target.applyDamage(this.damage, game);
+        } else if (game) {
+            game.floatingTexts.push({ x: target.screenX, y: target.screenY - 18, text: 'imune!', color: '#aaa', life: 40 });
+        }
 
         let last = target;
         for (let i = 0; i < stats.chains; i++) {
             const next = this.findChainTarget(zombies, last, damaged, chainRange);
             if (!next) break;
             const dmg = this.damage * Math.pow(falloff, i + 1);
-            next.applyDamage(dmg, game);
+            const nStats = ZOMBIE_STATS[next.type];
+            if (!nStats?.immuneTo?.includes(damageType)) {
+                next.applyDamage(dmg, game);
+            }
             damaged.add(next);
             points.push({ x: next.screenX, y: next.screenY });
             last = next;
@@ -1830,11 +1841,19 @@ class Projectile {
     }
 
     onHit(zombies, game) {
+        const damageType = TOWER_STATS[this.type]?.damageType;
         if (this.type === 'rocket') {
             const radius = TOWER_STATS.rocket.splashRadius * CONFIG.gridSize;
             for (const z of zombies) {
                 const ddx = z.screenX - this.x, ddy = z.screenY - this.y;
-                if (ddx*ddx + ddy*ddy <= radius*radius) z.applyDamage(this.damage, game);
+                if (ddx*ddx + ddy*ddy <= radius*radius) {
+                    const zStats = ZOMBIE_STATS[z.type];
+                    if (zStats?.immuneTo?.includes(damageType)) {
+                        if (game) game.floatingTexts.push({ x: z.screenX, y: z.screenY - 18, text: 'imune!', color: '#aaa', life: 40 });
+                    } else {
+                        z.applyDamage(this.damage, game);
+                    }
+                }
             }
             this.explosion = { r: 0, max: radius };
         } else if (this.type === 'poison') {
@@ -1853,7 +1872,12 @@ class Projectile {
             this.target.applyPoison(this.damage * 0.0008, 2500);
             this.dead = true;
         } else {
-            this.target.applyDamage(this.damage, game);
+            const zStats = ZOMBIE_STATS[this.target.type];
+            if (zStats?.immuneTo?.includes(damageType)) {
+                if (game) game.floatingTexts.push({ x: this.target.screenX, y: this.target.screenY - 18, text: 'imune!', color: '#aaa', life: 40 });
+            } else {
+                this.target.applyDamage(this.damage, game);
+            }
             this.dead = true;
         }
     }
