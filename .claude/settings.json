@@ -1,0 +1,7 @@
+{
+  "shellAllow": [
+    "cd C:\\Users\\fabio\\OneDrive\\Área de Trabalho\\projetos\\zombie-defender && node -c game.js 2>&1",
+    "node -c game.js",
+    "type index.html"
+  ]
+}

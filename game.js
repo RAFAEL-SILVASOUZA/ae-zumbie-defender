@@ -33,7 +33,8 @@ const TOWER_STATS = {
     radar:      { range: 7.0, damage: 60, fireRate: 1500, cost: 100, damageType: 'energy', label: 'Radar' },
     robot:      { range: 3.5, damage: 22, fireRate: 550,  cost: 120, damageType: 'physical', label: 'Robô' },
     rocket:     { range: 4.0, damage: 30, fireRate: 1300, cost: 150, splashRadius: 1.3, damageType: 'explosive', label: 'Foguete' },
-    tesla:      { range: 4.0, damage: 80, fireRate: 1100, cost: 200, chains: 3, chainRange: 2.5, chainFalloff: 0.65, damageType: 'energy', label: 'Tesla' }
+    tesla:       { range: 4.0, damage: 80,  fireRate: 1100, cost: 200, chains: 3, chainRange: 2.5, chainFalloff: 0.65, damageType: 'energy', label: 'Tesla' },
+    radioactive: { range: 2.5, damage: 100, fireRate: 2500, cost: 250, damageType: 'energy', label: 'Radioativa' }
 };
 
 const ZOMBIE_STATS = {
@@ -89,12 +90,12 @@ class Game {
 
         this.initGrid();
         this.initEventListeners();
+        this.initHamburgerMenu();
         this.updatePath();
         this.updateHUD();
 
         this.loop = this.loop.bind(this);
-        this.startNextRound(this.gameTime);
-        requestAnimationFrame(this.loop);
+        this.initStartScreen();
     }
 
     initGrid() {
@@ -138,10 +139,72 @@ class Game {
             return { x, y };
         };
 
+        const cellFromTouch = (touch) => {
+            const rect = this.canvas.getBoundingClientRect();
+            const sx = this.canvas.width / rect.width;
+            const sy = this.canvas.height / rect.height;
+            const x = Math.floor((touch.clientX - rect.left) * sx / CONFIG.gridSize);
+            const y = Math.floor((touch.clientY - rect.top)  * sy / CONFIG.gridSize);
+            return { x, y };
+        };
+
         this.canvas.addEventListener('mousemove', (e) => {
             this.hoverCell = cellFromEvent(e);
         });
         this.canvas.addEventListener('mouseleave', () => { this.hoverCell = null; });
+
+        // --- Touch: drag-and-drop preview on mobile ---
+        this.canvas.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                this.hoverCell = cellFromTouch(e.touches[0]);
+            }
+        }, { passive: true });
+
+        this.canvas.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 1) {
+                this.hoverCell = cellFromTouch(e.touches[0]);
+            }
+        }, { passive: true });
+
+        this.canvas.addEventListener('touchend', (e) => {
+            if (this.gameOver) return;
+            if (!this.hoverCell) return;
+            const { x, y } = this.hoverCell;
+            if (x < 0 || x >= CONFIG.cols || y < 0 || y >= CONFIG.rows) {
+                this.hoverCell = null;
+                return;
+            }
+
+            // Prevent the synthetic click that fires after touchend
+            e.preventDefault();
+
+            const existing = this.findTowerAt(x, y);
+            if (existing) {
+                this.toggleTowerMenu(existing);
+                this.hoverCell = null;
+                return;
+            }
+
+            this.hideTowerMenu();
+
+            if (!this.selectedTowerType) {
+                this.hoverCell = null;
+                return;
+            }
+            const cost = TOWER_STATS[this.selectedTowerType].cost;
+            if (this.money < cost) {
+                this.flashFloating(x, y, 'Sem $!', '#c0392b');
+                this.hoverCell = null;
+                return;
+            }
+            if (!this.canPlaceTower(x, y)) {
+                this.flashFloating(x, y, 'X', '#c0392b');
+                this.hoverCell = null;
+                return;
+            }
+            this.placeTower(x, y, this.selectedTowerType);
+            this.hoverCell = null;
+        });
 
         this.canvas.addEventListener('click', (e) => {
             if (this.gameOver) return;
@@ -184,6 +247,108 @@ class Game {
                 });
             }
         });
+    }
+
+    // ---------- start screen ----------
+    initStartScreen() {
+        const self = this;
+        const startScreen = document.getElementById('start-screen');
+        const countdownOverlay = document.getElementById('countdown-overlay');
+        const helpOverlay = document.getElementById('help-overlay');
+
+        // ▶ Start button → countdown → game
+        document.getElementById('btn-start').addEventListener('click', () => {
+            startScreen.classList.add('fade-out');
+            setTimeout(() => { startScreen.style.display = 'none'; }, 800);
+            this.doCountdown();
+        });
+
+        // 🏆 Scores button on start screen
+        document.getElementById('btn-scores').addEventListener('click', () => {
+            this.showHighScores();
+        });
+
+        // ? Help button
+        document.getElementById('btn-help').addEventListener('click', () => {
+            helpOverlay.classList.add('show');
+        });
+        document.getElementById('help-close').addEventListener('click', () => {
+            helpOverlay.classList.remove('show');
+        });
+    }
+
+    doCountdown() {
+        const self = this;
+        const overlay = document.getElementById('countdown-overlay');
+        const countEl = document.getElementById('countdown');
+        let count = 3;
+        countEl.textContent = count;
+        overlay.classList.add('show');
+
+        const tick = () => {
+            count--;
+            if (count > 0) {
+                countEl.textContent = count;
+                setTimeout(tick, 1000);
+            } else {
+                countEl.textContent = 'GO!';
+                setTimeout(() => {
+                    overlay.classList.remove('show');
+                    self.startNextRound(self.gameTime);
+                    requestAnimationFrame(self.loop);
+                }, 600);
+            }
+        };
+        setTimeout(tick, 1000);
+    }
+
+    // ---------- hamburger menu ----------
+    initHamburgerMenu() {
+        const btn = document.getElementById('hamburger-btn');
+        const menu = document.getElementById('hamburger-menu');
+
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = menu.classList.contains('show');
+            menu.classList.toggle('show', !isOpen);
+        });
+
+        document.getElementById('hm-restart').addEventListener('click', () => {
+            this.closeHamburgerMenu();
+            location.reload();
+        });
+
+        document.getElementById('hm-scores').addEventListener('click', () => {
+            this.showHighScores();
+        });
+
+        // close when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!menu.contains(e.target) && e.target !== btn) {
+                this.closeHamburgerMenu();
+            }
+        });
+
+        // close on ESC
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.closeHamburgerMenu();
+                this.hideHighScores();
+            }
+        });
+
+        // high scores overlay buttons
+        document.getElementById('hs-close').addEventListener('click', () => {
+            this.hideHighScores();
+        });
+        document.getElementById('hs-clear').addEventListener('click', () => {
+            this.clearHighScores();
+            this.renderHighScores();
+        });
+    }
+
+    closeHamburgerMenu() {
+        document.getElementById('hamburger-menu').classList.remove('show');
     }
 
     findTowerAt(x, y) {
@@ -465,7 +630,12 @@ class Game {
         this.spawnInterval = Math.max(360, 1100 - this.round * 28);
         this.bossPending = (this.round >= ZOMBIE_STATS.king.unlockRound && this.round % 5 === 0);
         this.waveState = 'spawning';
-        this.lastSpawnTime = time - this.spawnInterval;
+        // round 1: delay de 3s antes dos primeiros monstros
+        if (this.round === 1) {
+            this.lastSpawnTime = time - this.spawnInterval + 3000;
+        } else {
+            this.lastSpawnTime = time - this.spawnInterval;
+        }
         this.showRoundBanner();
         this.updateHUD();
     }
@@ -574,6 +744,7 @@ class Game {
     endGame() {
         this.gameOver = true;
         this.hideTowerMenu();
+        this.saveHighScore();
         const el = document.getElementById('game-over');
         el.innerHTML = `
             <h1>Game Over</h1>
@@ -582,6 +753,53 @@ class Game {
             <button onclick="location.reload()">Jogar Novamente</button>
         `;
         el.classList.add('show');
+    }
+
+    // ---------- high scores ----------
+    saveHighScore() {
+        const scores = this.getHighScores();
+        const entry = { round: this.round, score: this.score, date: new Date().toLocaleDateString('pt-BR') };
+        scores.push(entry);
+        scores.sort((a, b) => b.score - a.score);
+        const top10 = scores.slice(0, 10);
+        localStorage.setItem('zombieDefenderScores', JSON.stringify(top10));
+    }
+
+    getHighScores() {
+        try {
+            return JSON.parse(localStorage.getItem('zombieDefenderScores')) || [];
+        } catch { return []; }
+    }
+
+    clearHighScores() {
+        localStorage.removeItem('zombieDefenderScores');
+    }
+
+    renderHighScores() {
+        const scores = this.getHighScores();
+        const listEl = document.getElementById('hs-list');
+        if (scores.length === 0) {
+            listEl.innerHTML = '<div class="hs-empty">Nenhum recorde ainda!</div>';
+            return;
+        }
+        listEl.innerHTML = scores.map((s, i) => {
+            const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+            return `<div class="hs-entry">
+                <span class="hs-rank">${medal}</span>
+                <span class="hs-score">${s.score}</span>
+                <span class="hs-detail">R${s.round} · ${s.date}</span>
+            </div>`;
+        }).join('');
+    }
+
+    showHighScores() {
+        this.renderHighScores();
+        document.getElementById('high-scores-overlay').classList.add('show');
+        this.closeHamburgerMenu();
+    }
+
+    hideHighScores() {
+        document.getElementById('high-scores-overlay').classList.remove('show');
     }
 
     // ---------- main loop ----------
@@ -871,6 +1089,8 @@ class Tower {
             if (time - this.lastShot > this.fireRate) {
                 if (this.type === 'tesla') {
                     this.fireTesla(cx, cy, target, zombies, projectiles, game);
+                } else if (this.type === 'radioactive') {
+                    this.fireRadioactive(cx, cy, zombies, projectiles, game);
                 } else {
                     projectiles.push(new Projectile(cx, cy, target, this.damage, this.type));
                 }
@@ -914,6 +1134,30 @@ class Tower {
         bolt.lifetimeMs = 220;
         bolt.dead = false;
         bolt.lifeMs = 0;
+        projectiles.push(bolt);
+    }
+
+    fireRadioactive(cx, cy, zombies, projectiles, game) {
+        const radius = this.range;
+        const damageType = TOWER_STATS.radioactive.damageType;
+        // dano a TODOS zumbis dentro do raio — não unidirecional
+        for (const z of zombies) {
+            if (z.health <= 0) continue;
+            const dx = z.screenX - cx, dy = z.screenY - cy;
+            if (dx*dx + dy*dy <= radius*radius) {
+                const zStats = ZOMBIE_STATS[z.type];
+                if (zStats?.immuneTo?.includes(damageType)) {
+                    if (game) game.floatingTexts.push({ x: z.screenX, y: z.screenY - 18, text: 'imune!', color: '#aaa', life: 40 });
+                } else {
+                    z.applyDamage(this.damage, game);
+                }
+            }
+        }
+        // projétil visual: disco radioativo giratório com fade
+        const bolt = new Projectile(cx, cy, null, 0, 'radioactive');
+        bolt.dead = false;
+        bolt.lifeMs = 0;
+        bolt.radioactiveDisk = { r: radius, maxLife: 900 }; // ms visível
         projectiles.push(bolt);
     }
 
@@ -967,6 +1211,7 @@ class Tower {
             case 'robot':      this.drawRobot(ctx); break;
             case 'rocket':     this.drawRocket(ctx); break;
             case 'tesla':      this.drawTesla(ctx); break;
+            case 'radioactive': this.drawRadioactive(ctx); break;
         }
 
         // level stars above the tower
@@ -1364,6 +1609,73 @@ class Tower {
         ctx.moveTo(3, -16);  ctx.lineTo(4, -19);
         ctx.moveTo(0, -18);  ctx.lineTo(0, -21);
         ctx.stroke();
+    }
+
+    drawRadioactive(ctx) {
+        inkStroke(ctx, 2);
+        const t = performance.now() * 0.003;
+
+        // wood base
+        ctx.fillStyle = '#8b5a2b';
+        roundRect(ctx, -13, 11, 26, 8, 3);
+        ctx.fill(); ctx.stroke();
+
+        // radiation symbol disc — amarelo com borda preta, girando
+        ctx.save();
+        ctx.translate(0, 0);
+        ctx.rotate(t);
+
+        // disco amarelo com textura desgastada
+        const discR = 16;
+        const grad = ctx.createRadialGradient(0, 0, 2, 0, 0, discR);
+        grad.addColorStop(0, '#f5d900');
+        grad.addColorStop(0.7, '#e8c400');
+        grad.addColorStop(1, '#c9a800');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, discR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#1a1a1a';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        // trefoil preto (3 lâminas + centro)
+        const bladeColor = '#1a1a1a';
+        ctx.fillStyle = bladeColor;
+        for (let i = 0; i < 3; i++) {
+            const ang = (i * Math.PI * 2) / 3 - Math.PI / 2;
+            ctx.save();
+            ctx.rotate(ang);
+            // lâmina: setor arredondado apontando para fora
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.arc(0, 0, discR * 0.72, -0.52, 0.52);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+        // círculo central preto
+        ctx.beginPath();
+        ctx.arc(0, 0, discR * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        // anel fino branco no centro (buraco)
+        ctx.strokeStyle = '#f5d900';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(0, 0, discR * 0.12, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.restore(); // fim do girar
+
+        // pulso de alerta ao atirar
+        if (this.recoil > 2) {
+            const pulseR = discR + (6 - this.recoil) * 4;
+            ctx.strokeStyle = `rgba(245, 217, 0, ${this.recoil / 6 * 0.6})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, pulseR, 0, Math.PI * 2);
+            ctx.stroke();
+        }
     }
 }
 
@@ -1810,6 +2122,7 @@ class Projectile {
         this.explosion = null;
         this.chainPoints = null; // tesla
         this.lifetimeMs = null;  // tesla
+        this.radioactiveDisk = null; // radioactive
     }
 
     update(zombies, dt, game) {
@@ -1817,6 +2130,12 @@ class Projectile {
         if (this.chainPoints) {
             this.lifeMs += dt;
             if (this.lifeMs >= this.lifetimeMs) this.dead = true;
+            return;
+        }
+        // radioactive disk: fixed radius, spinning, fades out
+        if (this.radioactiveDisk) {
+            this.lifeMs += dt;
+            if (this.lifeMs >= this.radioactiveDisk.maxLife) this.dead = true;
             return;
         }
         if (this.explosion) {
@@ -1913,6 +2232,53 @@ class Projectile {
                 ctx.arc(p.x, p.y, 4 * a, 0, Math.PI*2);
                 ctx.fill();
             }
+            return;
+        }
+
+        // radioactive disk: disco amarelo giratório com fade
+        if (this.radioactiveDisk) {
+            const a = 1 - (this.lifeMs / this.radioactiveDisk.maxLife);
+            const r = this.radioactiveDisk.r;
+            const spinAngle = performance.now() * 0.004;
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, a);
+            ctx.translate(this.x, this.y);
+
+            // disco amarelo semitransparente
+            const grad = ctx.createRadialGradient(0, 0, 2, 0, 0, r);
+            grad.addColorStop(0, 'rgba(245, 217, 0, 0.35)');
+            grad.addColorStop(0.7, 'rgba(232, 196, 0, 0.25)');
+            grad.addColorStop(1, 'rgba(201, 168, 0, 0.15)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = `rgba(26, 26, 26, ${a * 0.7})`;
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+
+            // símbolo trefoil girando
+            ctx.rotate(spinAngle);
+            const symR = r * 0.6;
+            ctx.fillStyle = `rgba(26, 26, 26, ${a * 0.6})`;
+            for (let i = 0; i < 3; i++) {
+                const ang = (i * Math.PI * 2) / 3 - Math.PI / 2;
+                ctx.save();
+                ctx.rotate(ang);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.arc(0, 0, symR, -0.52, 0.52);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+            // círculo central
+            ctx.beginPath();
+            ctx.arc(0, 0, symR * 0.28, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+            ctx.globalAlpha = 1;
             return;
         }
 
