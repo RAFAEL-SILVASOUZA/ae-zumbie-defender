@@ -41,7 +41,7 @@ const TOWER_STATS = {
     rocket:     { range: 4.0, damage: 30, fireRate: 1300, cost: 150, splashRadius: 1.3, damageType: 'explosive', label: 'Foguete' },
     tesla:       { range: 4.0, damage: 80,  fireRate: 1100, cost: 200, chains: 3, chainRange: 2.5, chainFalloff: 0.65, damageType: 'energy', label: 'Tesla' },
     radioactive: { range: 2.5, damage: 100, fireRate: 2500, cost: 250, damageType: 'energy', label: 'Radioativa' },
-    knight:      { range: 99,  damage: 100, fireRate: 500,  cost: 1000, damageType: 'holy', label: 'Cavaleiro', mobile: true, moveSpeed: 0.13, cleaveFactor: 0.5, cleaveRange: 0.9 }
+    knight:      { range: 99,  damage: 100, fireRate: 500,  cost: 500,  damageType: 'holy', label: 'Cavaleiro', mobile: true, moveSpeed: 0.13, cleaveFactor: 0.5, cleaveRange: 0.9 }
 };
 
 const ZOMBIE_STATS = {
@@ -98,11 +98,64 @@ class Game {
         this.initGrid();
         this.initEventListeners();
         this.initHamburgerMenu();
+        this.initAudio();
         this.updatePath();
         this.updateHUD();
 
         this.loop = this.loop.bind(this);
         this.initStartScreen();
+    }
+
+    // ---------- audio ----------
+    initAudio() {
+        this.bgMusic = document.getElementById('bg-music');
+        this.bgMusic.volume = 0.4;
+        this.muted = localStorage.getItem('zombieDefenderMuted') === '1';
+        this.bgMusic.muted = this.muted;
+        const muteBtn = document.getElementById('mute-btn');
+        const refreshMuteBtn = () => {
+            muteBtn.textContent = this.muted ? '🔇' : '🔊';
+            muteBtn.classList.toggle('muted', this.muted);
+        };
+        refreshMuteBtn();
+        muteBtn.addEventListener('click', () => {
+            this.muted = !this.muted;
+            this.bgMusic.muted = this.muted;
+            localStorage.setItem('zombieDefenderMuted', this.muted ? '1' : '0');
+            refreshMuteBtn();
+        });
+    }
+
+    playMusic() {
+        if (!this.bgMusic) return;
+        this.musicEnabled = true;
+        if (this.speedMultiplier > 0) {
+            const p = this.bgMusic.play();
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+        }
+    }
+
+    pauseMusic() {
+        if (!this.bgMusic) return;
+        this.bgMusic.pause();
+    }
+
+    stopMusic() {
+        if (!this.bgMusic) return;
+        this.musicEnabled = false;
+        this.bgMusic.pause();
+        this.bgMusic.currentTime = 0;
+    }
+
+    setSpeed(speed) {
+        this.speedMultiplier = speed;
+        if (!this.musicEnabled || this.gameOver) return;
+        if (speed === 0) {
+            this.pauseMusic();
+        } else if (this.bgMusic && this.bgMusic.paused) {
+            const p = this.bgMusic.play();
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+        }
     }
 
     initGrid() {
@@ -131,7 +184,7 @@ class Game {
         document.querySelectorAll('#speed-control button').forEach(btn => {
             btn.addEventListener('click', () => {
                 const speed = parseInt(btn.dataset.speed, 10);
-                this.speedMultiplier = speed;
+                this.setSpeed(speed);
                 document.querySelectorAll('#speed-control button').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
             });
@@ -248,7 +301,7 @@ class Game {
             }
             if (e.key >= '0' && e.key <= '4') {
                 const speed = parseInt(e.key, 10);
-                this.speedMultiplier = speed;
+                this.setSpeed(speed);
                 document.querySelectorAll('#speed-control button').forEach(b => {
                     b.classList.toggle('active', parseInt(b.dataset.speed, 10) === speed);
                 });
@@ -307,6 +360,7 @@ class Game {
                 setTimeout(() => {
                     overlay.classList.remove('show');
                     self.startNextRound(self.gameTime);
+                    self.playMusic();
                     requestAnimationFrame(self.loop);
                 }, 600);
             }
@@ -772,6 +826,7 @@ class Game {
     endGame() {
         this.gameOver = true;
         this.hideTowerMenu();
+        this.stopMusic();
         this.saveHighScore();
         const el = document.getElementById('game-over');
         el.innerHTML = `
@@ -1146,25 +1201,44 @@ class Tower {
         const homeX = this.x * CONFIG.gridSize + CONFIG.gridSize / 2;
         const homeY = this.y * CONFIG.gridSize + CONFIG.gridSize / 2;
 
-        // mantém o alvo até ele morrer; só então sorteia outro
+        // limpa alvo morto
         if (this.targetZombie && this.targetZombie.health <= 0) {
             this.targetZombie = null;
         }
-        if (!this.targetZombie) {
-            const alive = zombies.filter(z => z.health > 0);
-            if (alive.length > 0) {
-                // alvos já reservados por outros cavaleiros
-                const taken = new Set();
-                if (game && game.towers) {
-                    for (const t of game.towers) {
-                        if (t !== this && t.mobile && t.targetZombie && t.targetZombie.health > 0) {
-                            taken.add(t.targetZombie);
-                        }
-                    }
+
+        // alvos reservados por outros cavaleiros (vivos)
+        const taken = new Set();
+        if (game && game.towers) {
+            for (const t of game.towers) {
+                if (t !== this && t.mobile && t.targetZombie && t.targetZombie.health > 0) {
+                    taken.add(t.targetZombie);
                 }
+            }
+        }
+
+        const alive = zombies.filter(z => z.health > 0);
+
+        // se meu alvo já está sendo atacado por outro cavaleiro e existe alvo livre,
+        // troca para distribuir e maximizar zumbis abatidos
+        const overlapping = this.targetZombie && taken.has(this.targetZombie);
+        const hasFree = alive.some(z => !taken.has(z));
+        if (!this.targetZombie || (overlapping && hasFree)) {
+            if (alive.length > 0) {
                 const free = alive.filter(z => !taken.has(z));
                 const pool = free.length > 0 ? free : alive;
-                this.targetZombie = pool[Math.floor(Math.random() * pool.length)];
+                // escolhe o mais próximo para reduzir tempo de viagem
+                let best = null;
+                let bestDist = Infinity;
+                for (const z of pool) {
+                    const ddx = z.screenX - this.screenX;
+                    const ddy = z.screenY - this.screenY;
+                    const d = ddx * ddx + ddy * ddy;
+                    if (d < bestDist) {
+                        bestDist = d;
+                        best = z;
+                    }
+                }
+                this.targetZombie = best;
             }
         }
         const target = this.targetZombie;
@@ -2203,12 +2277,13 @@ class Zombie {
             this.screenY += (dy / dist) * move;
         }
 
-        // zumbi de gelo congela torres ao passar
+        // zumbi de gelo congela torres ao passar (cavaleiros são imunes)
         if (ZOMBIE_STATS[this.type].freezesTowers && game) {
             const freezeRange = CONFIG.gridSize * 1.2;
             for (const t of game.towers) {
-                const tcx = t.mobile ? t.screenX : t.x * CONFIG.gridSize + CONFIG.gridSize / 2;
-                const tcy = t.mobile ? t.screenY : t.y * CONFIG.gridSize + CONFIG.gridSize / 2;
+                if (t.mobile) continue;
+                const tcx = t.x * CONFIG.gridSize + CONFIG.gridSize / 2;
+                const tcy = t.y * CONFIG.gridSize + CONFIG.gridSize / 2;
                 const d = Math.hypot(this.screenX - tcx, this.screenY - tcy);
                 if (d < freezeRange) {
                     t.frozenUntil = Math.max(t.frozenUntil, game.gameTime + 3000);

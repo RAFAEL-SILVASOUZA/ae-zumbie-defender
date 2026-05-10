@@ -106,6 +106,7 @@
             </div>
             <div class="stat health">❤️ <span id="health">20</span></div>
             <button id="upgrade-all-btn" title="Evoluir todas as torres">⚡</button>
+            <button id="mute-btn" title="Mutar / Ativar música">🔊</button>
             <button id="hamburger-btn" title="Menu">☰</button>
             <div id="hamburger-menu">
                 <div class="hm-item" id="hm-restart">🔄 Reiniciar</div>
@@ -173,13 +174,14 @@
             <div class="shop-item" data-type="knight"
                 title="Cavaleiro - unidade móvel que persegue zumbis, ataque holy ignora imunidades, cleave em área (mais forte do jogo)">
                 <canvas class="icon" width="50" height="50"></canvas>
-                <span class="cost">$1000</span>
+                <span class="cost">$500</span>
             </div>
         </div>
 
         <div id="hint">Clique numa torre da loja e depois no campo · Clique numa torre colocada para Melhorar (até 3×)
             ou Vender (50%) · ESC fecha · Use o controle de velocidade no topo</div>
     </div>
+    <audio id="bg-music" src="music.mp3" loop preload="auto"></audio>
     <script src="game.js"></script>
 </body>
 

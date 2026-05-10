@@ -937,6 +937,30 @@ body {
     transform: translateY(-1px);
 }
 
+/* ===== MUTE BUTTON ===== */
+#mute-btn {
+    font-family: 'Bangers', cursive;
+    font-size: clamp(1.1rem, 2.6vw, 1.7rem);
+    background: linear-gradient(180deg, #f0dcb0, #c9a87a);
+    color: #2c1810;
+    border: 2px solid #6b3410;
+    border-radius: 5px;
+    padding: 2px 8px;
+    cursor: pointer;
+    box-shadow: 0 2px 0 #4a2710;
+    transition: transform 0.1s, background 0.15s;
+    line-height: 1;
+    flex-shrink: 0;
+}
+#mute-btn:hover {
+    background: linear-gradient(180deg, #ffe9bf, #d8b88a);
+    transform: translateY(-1px);
+}
+#mute-btn.muted {
+    background: linear-gradient(180deg, #b8b0a0, #8a8275);
+    color: #4a3a20;
+}
+
 /* ===== HAMBURGER DROPDOWN MENU ===== */
 #hamburger-menu {
     position: absolute;
