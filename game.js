@@ -40,7 +40,8 @@ const TOWER_STATS = {
     robot:      { range: 3.5, damage: 22, fireRate: 550,  cost: 120, damageType: 'physical', label: 'Robô' },
     rocket:     { range: 4.0, damage: 30, fireRate: 1300, cost: 150, splashRadius: 1.3, damageType: 'explosive', label: 'Foguete' },
     tesla:       { range: 4.0, damage: 80,  fireRate: 1100, cost: 200, chains: 3, chainRange: 2.5, chainFalloff: 0.65, damageType: 'energy', label: 'Tesla' },
-    radioactive: { range: 2.5, damage: 100, fireRate: 2500, cost: 250, damageType: 'energy', label: 'Radioativa' }
+    radioactive: { range: 2.5, damage: 100, fireRate: 2500, cost: 250, damageType: 'energy', label: 'Radioativa' },
+    knight:      { range: 99,  damage: 100, fireRate: 500,  cost: 1000, damageType: 'holy', label: 'Cavaleiro', mobile: true, moveSpeed: 0.13, cleaveFactor: 0.5, cleaveRange: 0.9 }
 };
 
 const ZOMBIE_STATS = {
@@ -513,7 +514,9 @@ class Game {
 
         const next = isMax ? null : t.previewUpgrade(maxLevel);
         const dmg = Math.round(t.damage);
-        const range = (t.range / CONFIG.gridSize).toFixed(1);
+        const isMobile = !!stats.mobile;
+        const range = isMobile ? '∞' : (t.range / CONFIG.gridSize).toFixed(1);
+        const nextRange = next ? (isMobile ? '∞' : (next.range / CONFIG.gridSize).toFixed(1)) : undefined;
         const dps = (t.damage / (t.fireRate / 1000)).toFixed(1);
 
         const stat = (label, cur, nxt) => {
@@ -532,7 +535,7 @@ class Game {
                 </div>
                 <div class="tm-stats">
                     ${stat('Dano', dmg, next ? Math.round(next.damage) : undefined)}<br>
-                    ${stat('Alcance', range, next ? (next.range / CONFIG.gridSize).toFixed(1) : undefined)}<br>
+                    ${stat('Alcance', range, nextRange)}<br>
                     ${stat('DPS', dps, next ? (next.damage / (next.fireRate / 1000)).toFixed(1) : undefined)}
                 </div>
             </div>
@@ -985,7 +988,7 @@ class Game {
             ctx.strokeRect(x * CONFIG.gridSize + 1, y * CONFIG.gridSize + 1, CONFIG.gridSize - 2, CONFIG.gridSize - 2);
             ctx.setLineDash([]);
 
-            if (existing.range > 0) {
+            if (existing.range > 0 && !existing.mobile) {
                 const cx = x * CONFIG.gridSize + CONFIG.gridSize/2;
                 const cy = y * CONFIG.gridSize + CONFIG.gridSize/2;
                 ctx.beginPath();
@@ -1004,7 +1007,7 @@ class Game {
         ctx.fillStyle = can ? 'rgba(80, 160, 80, 0.30)' : 'rgba(192, 57, 43, 0.30)';
         ctx.fillRect(x * CONFIG.gridSize, y * CONFIG.gridSize, CONFIG.gridSize, CONFIG.gridSize);
 
-        if (can) {
+        if (can && !TOWER_STATS[this.selectedTowerType].mobile) {
             const range = TOWER_STATS[this.selectedTowerType].range * CONFIG.gridSize;
             const cx = x * CONFIG.gridSize + CONFIG.gridSize/2;
             const cy = y * CONFIG.gridSize + CONFIG.gridSize/2;
@@ -1058,6 +1061,14 @@ class Tower {
         this.recoil = 0;
         this.spinAngle = 0;
         this.frozenUntil = 0;
+        this.mobile = !!s.mobile;
+        if (this.mobile) {
+            this.screenX = x * CONFIG.gridSize + CONFIG.gridSize / 2;
+            this.screenY = y * CONFIG.gridSize + CONFIG.gridSize / 2;
+            this.gallopPhase = 0;
+            this.swingTime = 0;
+            this.targetZombie = null;
+        }
         this.applyLevel();
     }
 
@@ -1106,6 +1117,11 @@ class Tower {
         // descongelou — limpa o timer
         if (this.frozenUntil > 0) this.frozenUntil = 0;
 
+        if (this.mobile) {
+            this.updateMobile(time, dt, zombies, game);
+            return;
+        }
+
         const target = this.findTarget(zombies);
         if (target) {
             const cx = this.x * CONFIG.gridSize + CONFIG.gridSize/2;
@@ -1123,6 +1139,90 @@ class Tower {
                 this.recoil = 6;
             }
         }
+    }
+
+    updateMobile(time, dt, zombies, game) {
+        const stats = TOWER_STATS[this.type];
+        const homeX = this.x * CONFIG.gridSize + CONFIG.gridSize / 2;
+        const homeY = this.y * CONFIG.gridSize + CONFIG.gridSize / 2;
+
+        // mantém o alvo até ele morrer; só então sorteia outro
+        if (this.targetZombie && this.targetZombie.health <= 0) {
+            this.targetZombie = null;
+        }
+        if (!this.targetZombie) {
+            const alive = zombies.filter(z => z.health > 0);
+            if (alive.length > 0) {
+                // alvos já reservados por outros cavaleiros
+                const taken = new Set();
+                if (game && game.towers) {
+                    for (const t of game.towers) {
+                        if (t !== this && t.mobile && t.targetZombie && t.targetZombie.health > 0) {
+                            taken.add(t.targetZombie);
+                        }
+                    }
+                }
+                const free = alive.filter(z => !taken.has(z));
+                const pool = free.length > 0 ? free : alive;
+                this.targetZombie = pool[Math.floor(Math.random() * pool.length)];
+            }
+        }
+        const target = this.targetZombie;
+
+        let tx, ty;
+        if (target) {
+            tx = target.screenX;
+            ty = target.screenY;
+        } else {
+            tx = homeX;
+            ty = homeY;
+        }
+
+        const dx = tx - this.screenX;
+        const dy = ty - this.screenY;
+        const dist = Math.hypot(dx, dy);
+        const meleeRange = CONFIG.gridSize * 0.7;
+
+        if (target && dist <= meleeRange) {
+            this.angle = Math.atan2(dy, dx);
+            if (time - this.lastShot > this.fireRate) {
+                const damageType = stats.damageType;
+                const tStats = ZOMBIE_STATS[target.type];
+                if (!tStats?.immuneTo?.includes(damageType)) {
+                    target.applyDamage(this.damage, game);
+                } else if (game) {
+                    game.floatingTexts.push({ x: target.screenX, y: target.screenY - 18, text: 'imune!', color: '#aaa', life: 40 });
+                }
+
+                // cleave: dano em zumbis adjacentes
+                const cleaveR = (stats.cleaveRange || 0.9) * CONFIG.gridSize;
+                const cleaveD = this.damage * (stats.cleaveFactor || 0.5);
+                for (const z of zombies) {
+                    if (z === target || z.health <= 0) continue;
+                    const ddx = z.screenX - this.screenX;
+                    const ddy = z.screenY - this.screenY;
+                    if (ddx * ddx + ddy * ddy <= cleaveR * cleaveR) {
+                        const zS = ZOMBIE_STATS[z.type];
+                        if (!zS?.immuneTo?.includes(damageType)) {
+                            z.applyDamage(cleaveD, game);
+                        }
+                    }
+                }
+
+                this.lastShot = time;
+                this.swingTime = 220;
+                this.recoil = 6;
+            }
+        } else if (dist > 1) {
+            this.angle = Math.atan2(dy, dx);
+            const move = (stats.moveSpeed || 0.13) * dt;
+            const m = Math.min(move, dist);
+            this.screenX += (dx / dist) * m;
+            this.screenY += (dy / dist) * m;
+        }
+
+        if (this.swingTime > 0) this.swingTime -= dt;
+        this.gallopPhase = (this.gallopPhase || 0) + dt * 0.018;
     }
 
     fireTesla(cx, cy, target, zombies, projectiles, game) {
@@ -1216,6 +1316,10 @@ class Tower {
     }
 
     draw(ctx) {
+        if (this.mobile) {
+            this.drawMobileUnit(ctx);
+            return;
+        }
         const cx = this.x * CONFIG.gridSize + CONFIG.gridSize/2;
         const cy = this.y * CONFIG.gridSize + CONFIG.gridSize/2;
 
@@ -1279,6 +1383,278 @@ class Tower {
         }
 
         ctx.restore();
+    }
+
+    drawMobileUnit(ctx) {
+        const homeX = this.x * CONFIG.gridSize + CONFIG.gridSize / 2;
+        const homeY = this.y * CONFIG.gridSize + CONFIG.gridSize / 2;
+        const distFromHome = Math.hypot(this.screenX - homeX, this.screenY - homeY);
+
+        // bandeira/estandarte na "casa" — só aparece quando o cavaleiro saiu
+        if (distFromHome > 14) {
+            this.drawKnightHome(ctx, homeX, homeY);
+        }
+
+        // sombra do cavaleiro
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+        ctx.beginPath();
+        ctx.ellipse(this.screenX, this.screenY + 14, 18, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.save();
+        ctx.translate(this.screenX, this.screenY);
+        const facing = Math.cos(this.angle || 0) >= 0 ? 1 : -1;
+        if (facing < 0) ctx.scale(-1, 1);
+
+        if (this.type === 'knight') this.drawKnight(ctx);
+
+        // estrelas de nível
+        if (this.level > 0) {
+            const starY = -32;
+            const spacing = 7;
+            const totalW = (this.level - 1) * spacing;
+            for (let i = 0; i < this.level; i++) {
+                const sx = -totalW / 2 + i * spacing;
+                ctx.fillStyle = '#f1c40f';
+                ctx.strokeStyle = COLORS.ink;
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                for (let p = 0; p < 5; p++) {
+                    const a = -Math.PI / 2 + (p * 2 * Math.PI) / 5;
+                    const r = 3.2;
+                    ctx.lineTo(sx + Math.cos(a) * r, starY + Math.sin(a) * r);
+                    const a2 = a + Math.PI / 5;
+                    ctx.lineTo(sx + Math.cos(a2) * r * 0.45, starY + Math.sin(a2) * r * 0.45);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+        }
+
+        if (this.frozenUntil > 0) {
+            ctx.fillStyle = 'rgba(135, 206, 250, 0.45)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 22, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.beginPath();
+            ctx.arc(-8, -6, 2, 0, Math.PI * 2);
+            ctx.arc(6, 4, 1.5, 0, Math.PI * 2);
+            ctx.arc(-4, 8, 1.2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+
+    drawKnightHome(ctx, hx, hy) {
+        ctx.save();
+        ctx.translate(hx, hy);
+        inkStroke(ctx, 1.5);
+        // base de terra
+        ctx.fillStyle = '#8b5a2b';
+        ctx.beginPath();
+        ctx.ellipse(0, 8, 7, 2.5, 0, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+        // mastro
+        ctx.fillStyle = '#5a4010';
+        roundRect(ctx, -1, -18, 2, 26, 1);
+        ctx.fill(); ctx.stroke();
+        // bandeira vermelha (galhardete)
+        ctx.fillStyle = '#c0392b';
+        ctx.beginPath();
+        ctx.moveTo(1, -18);
+        ctx.lineTo(13, -15);
+        ctx.lineTo(9, -11);
+        ctx.lineTo(13, -7);
+        ctx.lineTo(1, -4);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        // cruz dourada na bandeira
+        ctx.strokeStyle = '#f1c40f';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(6, -14); ctx.lineTo(6, -8);
+        ctx.moveTo(3, -11); ctx.lineTo(9, -11);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    drawKnight(ctx) {
+        inkStroke(ctx, 1.7);
+        const gallop = Math.sin(this.gallopPhase * 8) * 1.8;
+        const gallop2 = Math.cos(this.gallopPhase * 8) * 1.8;
+
+        // pernas traseiras
+        ctx.fillStyle = '#5a3819';
+        roundRect(ctx, -11, 8, 3, 7 - gallop, 1);
+        ctx.fill(); ctx.stroke();
+        roundRect(ctx, -7, 8, 3, 7 + gallop, 1);
+        ctx.fill(); ctx.stroke();
+        // pernas dianteiras
+        roundRect(ctx, 5, 8, 3, 7 + gallop2, 1);
+        ctx.fill(); ctx.stroke();
+        roundRect(ctx, 9, 8, 3, 7 - gallop2, 1);
+        ctx.fill(); ctx.stroke();
+
+        // cauda
+        ctx.strokeStyle = COLORS.ink;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-13, -1);
+        ctx.quadraticCurveTo(-19, 1, -18, 7);
+        ctx.stroke();
+
+        // corpo do cavalo
+        ctx.fillStyle = '#6b4423';
+        ctx.strokeStyle = COLORS.ink;
+        ctx.lineWidth = 1.7;
+        roundRect(ctx, -13, -3, 26, 12, 5);
+        ctx.fill(); ctx.stroke();
+
+        // pescoço/cabeça do cavalo
+        ctx.fillStyle = '#6b4423';
+        ctx.beginPath();
+        ctx.moveTo(10, -3);
+        ctx.lineTo(17, -9);
+        ctx.lineTo(21, -8);
+        ctx.lineTo(21, -3);
+        ctx.lineTo(19, 1);
+        ctx.lineTo(13, 3);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        // crina
+        ctx.fillStyle = '#3a2510';
+        ctx.beginPath();
+        ctx.moveTo(10, -3);
+        ctx.lineTo(12, -6);
+        ctx.lineTo(14, -4);
+        ctx.lineTo(16, -7);
+        ctx.lineTo(18, -4);
+        ctx.lineTo(19, -7);
+        ctx.lineTo(20, -4);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        // olho do cavalo
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(19, -5, 0.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // sela vermelha
+        ctx.fillStyle = '#a52a2a';
+        roundRect(ctx, -8, -6, 14, 4, 1);
+        ctx.fill(); ctx.stroke();
+
+        // armadura do cavaleiro (torso)
+        ctx.fillStyle = '#bdc3c7';
+        roundRect(ctx, -5, -15, 12, 11, 2.5);
+        ctx.fill(); ctx.stroke();
+        // detalhe das placas
+        ctx.strokeStyle = '#7f8c8d';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(-5, -10); ctx.lineTo(7, -10);
+        ctx.stroke();
+        // emblema dourado no peito
+        ctx.fillStyle = '#f1c40f';
+        ctx.strokeStyle = COLORS.ink;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(1, -13);
+        ctx.lineTo(3, -10);
+        ctx.lineTo(1, -6);
+        ctx.lineTo(-1, -10);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+
+        // capacete
+        ctx.fillStyle = '#95a5a6';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(1, -19, 5, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+        // viseira (fenda)
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(-2, -20, 6, 1.6);
+        // pluma vermelha no topo
+        ctx.fillStyle = '#c0392b';
+        ctx.beginPath();
+        ctx.moveTo(1, -23);
+        ctx.quadraticCurveTo(5, -29, 7, -25);
+        ctx.quadraticCurveTo(4, -22, 1, -23);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+
+        // escudo (lado esquerdo do cavaleiro)
+        ctx.fillStyle = '#2980b9';
+        ctx.beginPath();
+        ctx.moveTo(-4, -8);
+        ctx.lineTo(-10, -6);
+        ctx.lineTo(-10, 1);
+        ctx.lineTo(-5, 5);
+        ctx.lineTo(-4, -8);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        // cruz dourada no escudo
+        ctx.strokeStyle = '#f1c40f';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-7, -6); ctx.lineTo(-7, 3);
+        ctx.moveTo(-10, -2); ctx.lineTo(-4, -2);
+        ctx.stroke();
+
+        // espada (lado direito, balança ao atacar)
+        const swingProgress = this.swingTime > 0 ? this.swingTime / 220 : 0;
+        const swingAngle = swingProgress > 0 ? Math.sin((1 - swingProgress) * Math.PI) * 1.1 : 0;
+        ctx.save();
+        ctx.translate(7, -10);
+        ctx.rotate(-Math.PI / 4 - swingAngle);
+        // lâmina
+        ctx.fillStyle = '#ecf0f1';
+        ctx.strokeStyle = COLORS.ink;
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(0, -2);
+        ctx.lineTo(2, -4);
+        ctx.lineTo(2, -18);
+        ctx.lineTo(0, -20);
+        ctx.lineTo(-2, -18);
+        ctx.lineTo(-2, -4);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        // brilho da lâmina
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(0.5, -17); ctx.lineTo(0.5, -6);
+        ctx.stroke();
+        // guarda
+        ctx.fillStyle = '#f1c40f';
+        ctx.strokeStyle = COLORS.ink;
+        ctx.lineWidth = 1.2;
+        roundRect(ctx, -4, -3, 8, 2, 0.5);
+        ctx.fill(); ctx.stroke();
+        // cabo
+        ctx.fillStyle = '#5a4010';
+        ctx.fillRect(-1, -1, 2, 4);
+        ctx.strokeRect(-1, -1, 2, 4);
+        // pomo
+        ctx.fillStyle = '#f1c40f';
+        ctx.beginPath();
+        ctx.arc(0, 4, 1.6, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+        ctx.restore();
+
+        // brilho de impacto durante o golpe
+        if (this.swingTime > 80) {
+            ctx.strokeStyle = `rgba(255, 230, 100, ${(this.swingTime - 80) / 140})`;
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(14, -4, 6, -0.8, 0.8);
+            ctx.stroke();
+        }
     }
 
     drawSpike(ctx) {
@@ -1831,8 +2207,8 @@ class Zombie {
         if (ZOMBIE_STATS[this.type].freezesTowers && game) {
             const freezeRange = CONFIG.gridSize * 1.2;
             for (const t of game.towers) {
-                const tcx = t.x * CONFIG.gridSize + CONFIG.gridSize / 2;
-                const tcy = t.y * CONFIG.gridSize + CONFIG.gridSize / 2;
+                const tcx = t.mobile ? t.screenX : t.x * CONFIG.gridSize + CONFIG.gridSize / 2;
+                const tcy = t.mobile ? t.screenY : t.y * CONFIG.gridSize + CONFIG.gridSize / 2;
                 const d = Math.hypot(this.screenX - tcx, this.screenY - tcy);
                 if (d < freezeRange) {
                     t.frozenUntil = Math.max(t.frozenUntil, game.gameTime + 3000);
@@ -2478,13 +2854,14 @@ function renderWeaponsTab() {
     const entries = Object.entries(TOWER_STATS);
     grid.innerHTML = entries.map(([type, stats]) => {
         const dps = (stats.damage / (stats.fireRate / 1000)).toFixed(1);
-        const rangeGrid = (stats.range).toFixed(1);
+        const rangeGrid = stats.mobile ? '∞' : (stats.range).toFixed(1);
 
         let specialText = '';
         if (stats.ignoresFlying) specialText = 'Ignora voadores';
         if (stats.splashRadius) specialText = `Área: ${stats.splashRadius.toFixed(1)}`;
         if (stats.chains) specialText = `Cadeia: ${stats.chains}`;
         if (stats.damageType === 'poison') specialText = 'Slow + Dano contínuo';
+        if (stats.mobile) specialText = 'Persegue zumbis · Cleave · Holy';
 
         return `
             <div class="help-card">
@@ -2597,6 +2974,9 @@ function rateWeaponVsMonster(weaponType, monsterType) {
     // Imune = muito ruim
     if (mStats.immuneTo && mStats.immuneTo.includes(dmgType)) return -1;
 
+    // Cavaleiro: dano holy ignora todas as imunidades + cleave + persegue
+    if (weaponType === 'knight') return 3;
+
     let rating = 2; // bom por padrão
 
     // Voadores: espinhos inúteis
@@ -2641,6 +3021,9 @@ function getStrategyTip(weaponType, monsterType) {
     }
     if (mStats.hpMult >= 2 && weaponType === 'radar') {
         return 'Alto dano do Radar derrete tanques!';
+    }
+    if (weaponType === 'knight') {
+        return 'Cavaleiro persegue e ignora imunidades!';
     }
     return '';
 }
