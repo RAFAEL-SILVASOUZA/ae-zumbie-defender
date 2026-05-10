@@ -65,6 +65,13 @@ class Game {
         this.canvas.width = CONFIG.cols * CONFIG.gridSize;
         this.canvas.height = CONFIG.rows * CONFIG.gridSize;
 
+        // pré-render do fundo estático (textura + grid) para um canvas offscreen,
+        // evitando ~280 ops de canvas por frame
+        this.bgCanvas = document.createElement('canvas');
+        this.bgCanvas.width = this.canvas.width;
+        this.bgCanvas.height = this.canvas.height;
+        this.bgCtx = this.bgCanvas.getContext('2d');
+
         this.money = CONFIG.startMoney;
         this.health = CONFIG.startHealth;
         this.score = 0;
@@ -99,6 +106,7 @@ class Game {
         this.initEventListeners();
         this.initHamburgerMenu();
         this.initAudio();
+        this.renderStaticBackground();
         this.updatePath();
         this.updateHUD();
 
@@ -109,9 +117,14 @@ class Game {
     // ---------- audio ----------
     initAudio() {
         this.bgMusic = document.getElementById('bg-music');
+        this.bossMusic = document.getElementById('boss-music');
         this.bgMusic.volume = 0.4;
+        this.bossMusic.volume = 0.5;
         this.muted = localStorage.getItem('zombieDefenderMuted') === '1';
         this.bgMusic.muted = this.muted;
+        this.bossMusic.muted = this.muted;
+        this.musicEnabled = false;
+        this.currentTrack = null; // 'normal' | 'boss' | null
         const muteBtn = document.getElementById('mute-btn');
         const refreshMuteBtn = () => {
             muteBtn.textContent = this.muted ? '🔇' : '🔊';
@@ -121,40 +134,109 @@ class Game {
         muteBtn.addEventListener('click', () => {
             this.muted = !this.muted;
             this.bgMusic.muted = this.muted;
+            this.bossMusic.muted = this.muted;
             localStorage.setItem('zombieDefenderMuted', this.muted ? '1' : '0');
             refreshMuteBtn();
         });
     }
 
-    playMusic() {
-        if (!this.bgMusic) return;
-        this.musicEnabled = true;
-        if (this.speedMultiplier > 0) {
-            const p = this.bgMusic.play();
-            if (p && typeof p.catch === 'function') p.catch(() => {});
-        }
+    // Chamada dentro do gesto do usuário (clique no botão Play) para destravar
+    // o autoplay das duas faixas — sem isso, o navegador bloqueia o .play()
+    // posterior (especialmente o da boss-music, que dispara muito depois).
+    primeAudio() {
+        if (this._audioPrimed) return;
+        this._audioPrimed = true;
+        const prime = (a) => {
+            if (!a) return;
+            const wasMuted = a.muted;
+            a.muted = true;
+            const p = a.play();
+            if (p && typeof p.then === 'function') {
+                p.then(() => {
+                    a.pause();
+                    a.currentTime = 0;
+                    a.muted = wasMuted;
+                }).catch(() => {
+                    a.muted = wasMuted;
+                    this._audioPrimed = false; // permite nova tentativa em próximo gesto
+                });
+            }
+        };
+        prime(this.bgMusic);
+        prime(this.bossMusic);
     }
 
-    pauseMusic() {
-        if (!this.bgMusic) return;
-        this.bgMusic.pause();
+    playMusic() {
+        this.musicEnabled = true;
+        this.updateMusicTrack();
     }
 
     stopMusic() {
-        if (!this.bgMusic) return;
         this.musicEnabled = false;
-        this.bgMusic.pause();
-        this.bgMusic.currentTime = 0;
+        if (this.bgMusic)   { this.bgMusic.pause();   this.bgMusic.currentTime = 0; }
+        if (this.bossMusic) { this.bossMusic.pause(); this.bossMusic.currentTime = 0; }
+        this.currentTrack = null;
     }
 
     setSpeed(speed) {
         this.speedMultiplier = speed;
-        if (!this.musicEnabled || this.gameOver) return;
-        if (speed === 0) {
-            this.pauseMusic();
-        } else if (this.bgMusic && this.bgMusic.paused) {
-            const p = this.bgMusic.play();
-            if (p && typeof p.catch === 'function') p.catch(() => {});
+        this.updateMusicTrack();
+    }
+
+    // Se um .play() for rejeitado pelo navegador (autoplay bloqueado),
+    // registra um listener único no documento; o próximo gesto do usuário
+    // (clique/tecla/toque) re-tenta tocar a faixa correta.
+    armAudioUnlockListener() {
+        if (this._audioUnlockArmed) return;
+        this._audioUnlockArmed = true;
+        const handler = () => {
+            this._audioUnlockArmed = false;
+            this._audioPrimed = false;
+            this.primeAudio();
+            this.updateMusicTrack();
+            document.removeEventListener('pointerdown', handler);
+            document.removeEventListener('keydown', handler);
+            document.removeEventListener('touchstart', handler);
+        };
+        document.addEventListener('pointerdown', handler, { once: true });
+        document.addEventListener('keydown', handler, { once: true });
+        document.addEventListener('touchstart', handler, { once: true });
+    }
+
+    tryPlay(audio) {
+        const p = audio.play();
+        if (p && typeof p.catch === 'function') {
+            p.catch(() => this.armAudioUnlockListener());
+        }
+    }
+
+    // Alterna entre a faixa normal e a do mestre; pausa tudo se jogo pausado/encerrado.
+    // Idempotente: pode ser chamada todo frame sem custo perceptível.
+    updateMusicTrack() {
+        if (!this.bgMusic || !this.bossMusic) return;
+        if (!this.musicEnabled || this.gameOver || this.speedMultiplier === 0) {
+            if (!this.bgMusic.paused)   this.bgMusic.pause();
+            if (!this.bossMusic.paused) this.bossMusic.pause();
+            return;
+        }
+        let bossAlive = false;
+        for (const z of this.zombies) {
+            if (z.health > 0 && ZOMBIE_STATS[z.type]?.isBoss) { bossAlive = true; break; }
+        }
+        const desired = bossAlive ? 'boss' : 'normal';
+        if (desired !== this.currentTrack) {
+            if (desired === 'boss') {
+                this.bgMusic.pause();
+                this.bossMusic.currentTime = 0;
+                this.tryPlay(this.bossMusic);
+            } else {
+                this.bossMusic.pause();
+                this.tryPlay(this.bgMusic);
+            }
+            this.currentTrack = desired;
+        } else if (this.currentTrack) {
+            const track = this.currentTrack === 'boss' ? this.bossMusic : this.bgMusic;
+            if (track.paused) this.tryPlay(track);
         }
     }
 
@@ -318,6 +400,7 @@ class Game {
 
         // ▶ Start button → countdown → game
         document.getElementById('btn-start').addEventListener('click', () => {
+            this.primeAudio();
             startScreen.classList.add('fade-out');
             setTimeout(() => { startScreen.style.display = 'none'; }, 800);
             this.doCountdown();
@@ -916,17 +999,28 @@ class Game {
                 p.update(this.zombies, dt, this);
                 if (p.dead) this.projectiles.splice(i, 1);
             }
+
+            // alterna música normal/boss conforme presença do mestre
+            this.updateMusicTrack();
         }
 
         this.drawBackground();
-        this.drawGrid();
         this.drawHover();
 
-        const groundZombies = this.zombies.filter(z => !ZOMBIE_STATS[z.type]?.flying).sort((a, b) => a.screenY - b.screenY);
-        const airZombies = this.zombies.filter(z => ZOMBIE_STATS[z.type]?.flying).sort((a, b) => a.screenY - b.screenY);
-        for (const z of groundZombies) z.draw(this.ctx);
+        // separa terrestres/aéreos sem alocar arrays novos: usa buffers reciclados
+        const ground = this._groundBuf || (this._groundBuf = []);
+        const air = this._airBuf || (this._airBuf = []);
+        ground.length = 0;
+        air.length = 0;
+        for (const z of this.zombies) {
+            if (ZOMBIE_STATS[z.type]?.flying) air.push(z);
+            else ground.push(z);
+        }
+        ground.sort((a, b) => a.screenY - b.screenY);
+        air.sort((a, b) => a.screenY - b.screenY);
+        for (const z of ground) z.draw(this.ctx);
         for (const t of this.towers) t.draw(this.ctx);
-        for (const z of airZombies) z.draw(this.ctx);
+        for (const z of air) z.draw(this.ctx);
         for (const p of this.projectiles) p.draw(this.ctx);
 
         for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
@@ -971,15 +1065,19 @@ class Game {
     }
 
     // ---------- drawing ----------
-    drawBackground() {
-        const ctx = this.ctx;
+    // Renderiza fundo + grid (estáticos) em canvas offscreen uma única vez.
+    renderStaticBackground() {
+        const ctx = this.bgCtx;
+        const w = this.bgCanvas.width;
+        const h = this.bgCanvas.height;
+
         ctx.fillStyle = COLORS.paperLight;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.fillRect(0, 0, w, h);
 
         ctx.fillStyle = 'rgba(91, 47, 18, 0.05)';
         for (let i = 0; i < 80; i++) {
-            const x = (i * 137 + 41) % this.canvas.width;
-            const y = (i * 311 + 17) % this.canvas.height;
+            const x = (i * 137 + 41) % w;
+            const y = (i * 311 + 17) % h;
             ctx.fillRect(x, y, 2, 2);
         }
 
@@ -999,31 +1097,31 @@ class Game {
         }
 
         const grad = ctx.createRadialGradient(
-            this.canvas.width/2, this.canvas.height/2, this.canvas.height * 0.4,
-            this.canvas.width/2, this.canvas.height/2, this.canvas.height * 0.95
+            w / 2, h / 2, h * 0.4,
+            w / 2, h / 2, h * 0.95
         );
         grad.addColorStop(0, 'rgba(0,0,0,0)');
         grad.addColorStop(1, 'rgba(91, 47, 18, 0.28)');
         ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    }
+        ctx.fillRect(0, 0, w, h);
 
-    drawGrid() {
-        const ctx = this.ctx;
+        // grid: um único path em vez de N beginPath/stroke
         ctx.strokeStyle = COLORS.grid;
         ctx.lineWidth = 1;
+        ctx.beginPath();
         for (let x = 0; x <= CONFIG.cols; x++) {
-            ctx.beginPath();
             ctx.moveTo(x * CONFIG.gridSize, 0);
-            ctx.lineTo(x * CONFIG.gridSize, this.canvas.height);
-            ctx.stroke();
+            ctx.lineTo(x * CONFIG.gridSize, h);
         }
         for (let y = 0; y <= CONFIG.rows; y++) {
-            ctx.beginPath();
             ctx.moveTo(0, y * CONFIG.gridSize);
-            ctx.lineTo(this.canvas.width, y * CONFIG.gridSize);
-            ctx.stroke();
+            ctx.lineTo(w, y * CONFIG.gridSize);
         }
+        ctx.stroke();
+    }
+
+    drawBackground() {
+        this.ctx.drawImage(this.bgCanvas, 0, 0);
     }
 
     drawHover() {
@@ -1201,8 +1299,9 @@ class Tower {
         const homeX = this.x * CONFIG.gridSize + CONFIG.gridSize / 2;
         const homeY = this.y * CONFIG.gridSize + CONFIG.gridSize / 2;
 
-        // limpa alvo morto
-        if (this.targetZombie && this.targetZombie.health <= 0) {
+        // limpa alvo morto OU que escapou (atravessou o mapa);
+        // sem o reachedEnd, o cavaleiro persegue um zumbi removido para sempre
+        if (this.targetZombie && (this.targetZombie.health <= 0 || this.targetZombie.reachedEnd)) {
             this.targetZombie = null;
         }
 
