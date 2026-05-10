@@ -464,6 +464,13 @@ body {
     position: relative;
     z-index: 1;
 }
+.version-tag {
+    font-family: 'Patrick Hand', cursive;
+    font-size: 0.85rem;
+    color: rgba(90, 47, 16, 0.45);
+    margin-top: 18px;
+    user-select: none;
+}
 .start-title {
     font-family: 'Bangers', cursive;
     font-size: clamp(2.4rem, 9vw, 5.5rem);

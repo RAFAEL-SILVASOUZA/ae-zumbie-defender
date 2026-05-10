@@ -740,9 +740,10 @@ class Game {
     }
 
     handleZombieKilled(z) {
-        const reward = Math.floor((4 + Math.floor(z.maxHealth / 14)) * 0.7);
+        const mh = z.maxHealth || 0;
+        const reward = Math.max(0, Math.floor((4 + Math.floor(mh / 14)) * 0.7));
         this.money += reward;
-        this.score += z.maxHealth;
+        this.score += mh;
         this.floatingTexts.push({ x: z.screenX, y: z.screenY, text: `+$${reward}`, color: '#5a4010', life: 60 });
         this.updateHUD();
     }

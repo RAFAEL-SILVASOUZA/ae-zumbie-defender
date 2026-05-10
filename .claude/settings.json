@@ -7,6 +7,7 @@
     "git commit -m \"Redesenhar aba de estratégia: cards visuais por monstro com mini-ícones das armas, cores intuitivas e dicas textuais\"",
     "git push",
     "git add game.js && git commit -m \"fix: reduz curva de dificuldade (HP 1.16→1.09, zumbis 1.6→0.8x)\"",
-    "cd C:\\Users\\rafae\\ae-zombie-defender && git add -A && git commit -m \"maxLevel dinâmico: sobe a cada 10 rounds (3→4→5→6)\" && git push"
+    "cd C:\\Users\\rafae\\ae-zombie-defender && git add -A && git commit -m \"maxLevel dinâmico: sobe a cada 10 rounds (3→4→5→6)\" && git push",
+    "cd C:\\Users\\rafae\\ae-zombie-defender && git add -A && git commit -m \"fix: protege calculo de recompensa contra NaN + adiciona versao v1.0.0\" && git push"
   ]
 }
