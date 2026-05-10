@@ -2,6 +2,11 @@
   "shellAllow": [
     "cd C:\\Users\\fabio\\OneDrive\\Área de Trabalho\\projetos\\zombie-defender && node -c game.js 2>&1",
     "node -c game.js",
-    "type index.html"
+    "type index.html",
+    "git status",
+    "git commit -m \"Redesenhar aba de estratégia: cards visuais por monstro com mini-ícones das armas, cores intuitivas e dicas textuais\"",
+    "git push",
+    "git add game.js && git commit -m \"fix: reduz curva de dificuldade (HP 1.16→1.09, zumbis 1.6→0.8x)\"",
+    "cd C:\\Users\\rafae\\ae-zombie-defender && git add -A && git commit -m \"maxLevel dinâmico: sobe a cada 10 rounds (3→4→5→6)\" && git push"
   ]
 }

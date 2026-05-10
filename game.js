@@ -14,9 +14,15 @@ const CONFIG = {
     baseSpeed: 0.035,             // px/ms at round 1 for a normal zombie
     speedPerRound: 0.0015,
     maxRoundSpeedBonus: 0.04,
-    maxLevel: 3,                  // tower can be upgraded up to 3 times (4 levels total)
-    upgradeCostFactors: [0.7, 1.0, 1.5]
+    upgradeCostFactors: [0.7, 1.0, 1.5, 2.0, 2.8]
 };
+
+function getMaxLevel(round) {
+    if (round <= 10) return 3;
+    if (round <= 20) return 4;
+    if (round <= 30) return 5;
+    return 6;
+}
 
 const COLORS = {
     paperLight: '#e8d5a8',
@@ -411,14 +417,15 @@ class Game {
     }
 
     upgradeTower(tower) {
-        if (tower.level >= CONFIG.maxLevel) return;
-        const cost = tower.getUpgradeCost();
+        const maxLevel = getMaxLevel(this.round);
+        if (tower.level >= maxLevel) return;
+        const cost = tower.getUpgradeCost(maxLevel);
         if (this.money < cost) {
             this.flashFloating(tower.x, tower.y, 'Sem $!', '#c0392b');
             return;
         }
         this.money -= cost;
-        tower.upgrade(cost);
+        tower.upgrade(cost, maxLevel);
         this.floatingTexts.push({
             x: tower.x * CONFIG.gridSize + CONFIG.gridSize / 2,
             y: tower.y * CONFIG.gridSize + CONFIG.gridSize / 2,
@@ -507,16 +514,17 @@ class Game {
         if (!t) return;
         const menu = document.getElementById('tower-menu');
         const stats = TOWER_STATS[t.type];
-        const isMax = t.level >= CONFIG.maxLevel;
-        const upgradeCost = isMax ? 0 : t.getUpgradeCost();
+        const maxLevel = getMaxLevel(this.round);
+        const isMax = t.level >= maxLevel;
+        const upgradeCost = isMax ? 0 : t.getUpgradeCost(maxLevel);
         const refund = Math.floor(t.totalInvested * CONFIG.sellRefundFactor);
 
         const stars = [];
-        for (let i = 0; i < CONFIG.maxLevel + 1; i++) {
+        for (let i = 0; i < maxLevel + 1; i++) {
             stars.push(`<span class="${i <= t.level ? '' : 'empty'}">★</span>`);
         }
 
-        const next = isMax ? null : t.previewUpgrade();
+        const next = isMax ? null : t.previewUpgrade(maxLevel);
         const dmg = Math.round(t.damage);
         const range = (t.range / CONFIG.gridSize).toFixed(1);
         const dps = (t.damage / (t.fireRate / 1000)).toFixed(1);
@@ -530,7 +538,7 @@ class Game {
         menu.innerHTML = `
             <div class="tm-header">${stats.label}</div>
             <div class="tm-level">
-                Nível ${t.level + 1}/${CONFIG.maxLevel + 1}
+                Nível ${t.level + 1}/${maxLevel + 1}
                 <span class="tm-stars">${stars.join('')}</span>
             </div>
             <div class="tm-stats">
@@ -1050,21 +1058,21 @@ class Tower {
         this.fireRate = this.baseFireRate * rateMult;
     }
 
-    getUpgradeCost() {
-        if (this.level >= CONFIG.maxLevel) return 0;
+    getUpgradeCost(maxLevel) {
+        if (this.level >= maxLevel) return 0;
         const factor = CONFIG.upgradeCostFactors[this.level];
         return Math.max(1, Math.floor(TOWER_STATS[this.type].cost * factor));
     }
 
-    upgrade(paidCost) {
-        if (this.level >= CONFIG.maxLevel) return;
+    upgrade(paidCost, maxLevel) {
+        if (this.level >= maxLevel) return;
         this.level++;
         this.totalInvested += paidCost;
         this.applyLevel();
     }
 
-    previewUpgrade() {
-        if (this.level >= CONFIG.maxLevel) return null;
+    previewUpgrade(maxLevel) {
+        if (this.level >= maxLevel) return null;
         const nextLevel = this.level + 1;
         const dmgMult = 1 + nextLevel * 0.55;
         const rangeMult = 1 + nextLevel * 0.12;
