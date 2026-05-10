@@ -631,7 +631,7 @@ class Game {
     // ---------- waves ----------
     startNextRound(time) {
         this.round++;
-        this.zombiesToSpawn = 4 + Math.floor(this.round * 1.6);
+        this.zombiesToSpawn = 4 + Math.floor(this.round * 0.8);
         this.spawnInterval = Math.max(360, 1100 - this.round * 28);
         this.bossPending = (this.round >= ZOMBIE_STATS.king.unlockRound && this.round % 5 === 0);
         this.waveState = 'spawning';
@@ -1692,7 +1692,7 @@ class Zombie {
         const stats = ZOMBIE_STATS[type];
 
         const baseHealth = 35;
-        const scaling = Math.pow(1.16, round - 1);
+        const scaling = Math.pow(1.09, round - 1);
         this.maxHealth = Math.max(1, Math.floor(baseHealth * scaling * stats.hpMult));
         this.health = this.maxHealth;
 
