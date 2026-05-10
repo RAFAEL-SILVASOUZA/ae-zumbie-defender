@@ -453,54 +453,10 @@ class Game {
 
         const menu = document.getElementById('tower-menu');
         this.renderTowerMenu();
-
-        // use percentages so menu positions correctly even when canvas is scaled (mobile)
-        const leftPct = ((tower.x + 0.5) / CONFIG.cols) * 100;
-        menu.style.left = `${leftPct}%`;
-
-        // show first so we can measure the rendered size
+        // Modal circular sempre centralizada — sem posicionamento complexo
+        menu.style.left = '50%';
+        menu.style.top = '50%';
         menu.classList.add('show');
-        requestAnimationFrame(() => {
-            const menuW = menu.offsetWidth;
-            const menuH = menu.offsetHeight;
-            const containerW = menu.parentElement.offsetWidth;
-            const containerH = menu.parentElement.offsetHeight;
-
-            // --- vertical placement ---
-            const towerCenterY = (tower.y + 0.5) / CONFIG.rows * containerH;
-            const spaceAbove = towerCenterY;
-            const spaceBelow = containerH - towerCenterY;
-
-            let placeBelow = false;
-            if (spaceBelow >= menuH && spaceAbove >= menuH) {
-                placeBelow = true;
-            } else if (spaceBelow >= menuH) {
-                placeBelow = true;
-            } else if (spaceAbove >= menuH) {
-                placeBelow = false;
-            } else {
-                placeBelow = spaceBelow > spaceAbove;
-            }
-
-            if (placeBelow) {
-                menu.style.top = `${((tower.y + 1) / CONFIG.rows) * 100}%`;
-                menu.classList.add('below');
-            } else {
-                menu.style.top = `${(tower.y / CONFIG.rows) * 100}%`;
-                menu.classList.remove('below');
-            }
-
-            // --- horizontal placement (clamp to stay inside) ---
-            const towerCenterX = (tower.x + 0.5) / CONFIG.cols * containerW;
-            let leftPx = towerCenterX;
-            const halfW = menuW / 2;
-            if (leftPx - halfW < 0) {
-                leftPx = halfW; // snap to left edge
-            } else if (leftPx + halfW > containerW) {
-                leftPx = containerW - halfW; // snap to right edge
-            }
-            menu.style.left = `${(leftPx / containerW) * 100}%`;
-        });
     }
 
     hideTowerMenu() {
@@ -536,32 +492,51 @@ class Game {
         };
 
         menu.innerHTML = `
-            <div class="tm-header">${stats.label}</div>
-            <div class="tm-level">
-                Nível ${t.level + 1}/${maxLevel + 1}
-                <span class="tm-stars">${stars.join('')}</span>
+            <!-- Fatia superior (maior) — informações da torre -->
+            <div class="tm-top-slice">
+                <div class="tm-header">${stats.label}</div>
+                <div class="tm-level">
+                    Nível ${t.level + 1}/${maxLevel + 1}
+                    <span class="tm-stars">${stars.join('')}</span>
+                </div>
+                <div class="tm-stats">
+                    ${stat('Dano', dmg, next ? Math.round(next.damage) : undefined)}<br>
+                    ${stat('Alcance', range, next ? (next.range / CONFIG.gridSize).toFixed(1) : undefined)}<br>
+                    ${stat('DPS', dps, next ? (next.damage / (next.fireRate / 1000)).toFixed(1) : undefined)}
+                </div>
             </div>
-            <div class="tm-stats">
-                ${stat('Dano', dmg, next ? Math.round(next.damage) : undefined)}<br>
-                ${stat('Alcance', range, next ? (next.range / CONFIG.gridSize).toFixed(1) : undefined)}<br>
-                ${stat('DPS', dps, next ? (next.damage / (next.fireRate / 1000)).toFixed(1) : undefined)}
+            <!-- Fatias inferiores — vender (esquerda) e melhorar (direita) -->
+            <div class="tm-bottom-slices">
+                <div class="tm-slice tm-sell" data-action="sell" ${this.money < refund ? 'data-disabled="1"' : ''}>Vender<br><strong>+$${refund}</strong></div>
+				<div class="tm-slice tm-upgrade" data-action="upgrade" ${(isMax || this.money < upgradeCost) ? 'data-disabled="1"' : ''}>
+					${isMax ? 'MAX' : `Melhorar<br><strong>$${upgradeCost}</strong>`}
+				</div>
             </div>
-            <button class="tm-upgrade" ${isMax || this.money < upgradeCost ? 'disabled' : ''}>
-                ${isMax ? '★ NÍVEL MÁXIMO ★' : `⬆ Melhorar  $${upgradeCost}`}
-            </button>
-            <button class="tm-sell">💰 Vender  +$${refund}</button>
         `;
 
-        const upBtn = menu.querySelector('.tm-upgrade');
-        if (upBtn && !isMax) {
-            upBtn.addEventListener('click', (e) => {
+        // Event listeners nas fatias clicáveis
+        const sellSlice = menu.querySelector('[data-action="sell"]');
+        const upgradeSlice = menu.querySelector('[data-action="upgrade"]');
+
+        if (sellSlice) {
+            sellSlice.addEventListener('click', (e) => {
                 e.stopPropagation();
+                if (sellSlice.dataset.disabled) return;
+                this.sellTower(t);
+            });
+        }
+        if (upgradeSlice) {
+            upgradeSlice.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (upgradeSlice.dataset.disabled) return;
                 this.upgradeTower(t);
             });
         }
-        menu.querySelector('.tm-sell').addEventListener('click', (e) => {
+
+        // Clicar na área de info (fora dos botões) fecha o modal
+        menu.querySelector('.tm-top-slice').addEventListener('click', (e) => {
             e.stopPropagation();
-            this.sellTower(t);
+            this.hideTowerMenu();
         });
     }
 

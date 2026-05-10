@@ -322,59 +322,52 @@ body {
     #speed-control button { padding: 2px 5px; font-size: 0.75rem; min-width: 22px; }
 }
 
+/* ===== Modal circular — 3 fatias tipo pizza ===== */
 #tower-menu {
     position: absolute;
-    background: linear-gradient(180deg, #f0dcb0, #d4b585);
-    border: 2px solid #6b3410;
-    border-radius: 6px;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.55), inset 0 0 8px rgba(91, 47, 18, 0.15);
-    padding: 5px 7px 7px;
-    z-index: 10;
+    width: clamp(200px, 30vw, 280px);
+    height: clamp(200px, 30vw, 280px);
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 35%, rgba(240, 220, 176, 0.92), rgba(212, 181, 133, 0.92));
+    border: 3px solid #6b3410;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.6), inset 0 0 15px rgba(91, 47, 18, 0.12);
+    z-index: 20;
     color: #2c1810;
-    min-width: 120px;
     text-align: center;
-    transform: translate(-50%, -100%);
-    margin-top: -10px;
     display: none;
     pointer-events: auto;
-    font-size: clamp(0.64rem, 1.2vw, 0.75rem);
-}
-#tower-menu.show { display: block; }
-#tower-menu.below {
-    transform: translate(-50%, 0);
-    margin-top: 10px;
-}
-#tower-menu::after {
-    content: '';
-    position: absolute;
+    font-size: clamp(0.6rem, 1.2vw, 0.75rem);
+    overflow: hidden;
+    /* Centralizada na tela */
     left: 50%;
-    bottom: -7px;
-    transform: translateX(-50%);
-    width: 0; height: 0;
-    border-left: 7px solid transparent;
-    border-right: 7px solid transparent;
-    border-top: 7px solid #6b3410;
+    top: 50%;
+    transform: translate(-50%, -50%);
 }
-#tower-menu.below::after {
-    bottom: auto;
-    top: -7px;
-    border-top: 0;
-    border-bottom: 7px solid #6b3410;
+#tower-menu.show { display: flex; flex-direction: column; }
+
+/* Fatia superior — informações (maior, ~60% do espaço) */
+#tower-menu .tm-top-slice {
+    flex: 6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px 4px;
+    position: relative;
 }
 #tower-menu .tm-header {
     font-family: 'Bangers', cursive;
-    font-size: 1.1em;
-    border-bottom: 1px dashed #6b3410;
-    padding-bottom: 2px;
-    margin-bottom: 4px;
+    font-size: clamp(0.9rem, 2vw, 1.2rem);
     letter-spacing: 1px;
+    margin-bottom: 2px;
+    text-shadow: 1px 1px 0 rgba(255,255,255,0.4);
 }
 #tower-menu .tm-level {
     font-family: 'Bangers', cursive;
-    font-size: 0.8em;
+    font-size: clamp(0.6rem, 1.2vw, 0.75rem);
     color: #5a4010;
     letter-spacing: 1px;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
 }
 #tower-menu .tm-stars {
     color: #f1c40f;
@@ -384,49 +377,71 @@ body {
 #tower-menu .tm-stars .empty { color: rgba(91, 47, 18, 0.3); text-shadow: none; }
 #tower-menu .tm-stats {
     font-family: 'Patrick Hand', cursive;
-    font-size: 0.85em;
-    margin-bottom: 5px;
-    line-height: 1.2;
-    background: rgba(91, 47, 18, 0.08);
-    border-radius: 3px;
-    padding: 3px 4px;
+    font-size: clamp(0.6rem, 1.1vw, 0.78rem);
+    line-height: 1.25;
+    background: rgba(91, 47, 18, 0.1);
+    border-radius: 6px;
+    padding: 3px 6px;
 }
 #tower-menu .tm-stats .arrow { color: #27ae60; font-weight: bold; }
-#tower-menu button {
-    display: block;
-    width: 100%;
-    margin: 3px 0 0;
-    padding: 4px 6px;
-    border: 2px solid #6b3410;
-    border-radius: 4px;
+
+/* Separador visual entre fatias */
+#tower-menu .tm-top-slice::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 15%;
+    right: 15%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #6b3410, transparent);
+    border-radius: 50%;
+}
+
+/* Fatias inferiores — vender (esq) e melhorar (dir) — bandas coloridas */
+#tower-menu .tm-bottom-slices {
+    flex: 4;
+    display: flex;
+    align-items: stretch;
+    overflow: hidden;
+}
+#tower-menu .tm-slice {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
     color: #2c1810;
     font-family: 'Bangers', cursive;
-    font-size: 0.9em;
+    font-size: clamp(0.7rem, 1.4vw, 0.95rem);
     cursor: pointer;
     letter-spacing: 1px;
-    box-shadow: 0 2px 0 #4a2710;
-    transition: transform 0.1s, background 0.15s;
+    line-height: 1.2;
+    text-align: center;
+    transition: filter 0.15s, transform 0.1s;
+    user-select: none;
+    /* Compensa a curvatura do círculo — empurra o texto para dentro */
+    padding: 0 clamp(24px, 6vw, 45px);
 }
-#tower-menu button:hover {
-    transform: translateY(-1px);
+#tower-menu .tm-slice:hover {
+    filter: brightness(1.1);
+}
+#tower-menu .tm-slice[data-disabled="1"] {
+    opacity: 0.4;
+    cursor: not-allowed;
+    filter: none;
+}
+#tower-menu .tm-slice[data-disabled="1"]:hover {
+    filter: none;
+}
+/* Divisor vertical entre as duas fatias */
+#tower-menu .tm-slice + .tm-slice {
+    border-left: 2px solid rgba(107, 52, 16, 0.3);
 }
 #tower-menu .tm-upgrade {
     background: linear-gradient(180deg, #fff8e0, #f4c850);
 }
-#tower-menu .tm-upgrade:hover {
-    background: linear-gradient(180deg, #ffe48a, #f4c850);
-}
 #tower-menu .tm-sell {
     background: linear-gradient(180deg, #fad7d3, #e88a7e);
-}
-#tower-menu .tm-sell:hover {
-    background: linear-gradient(180deg, #ffc7be, #e88a7e);
-}
-#tower-menu button:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-    box-shadow: 0 2px 0 #4a2710;
-    transform: none;
 }
 
 /* ===== START SCREEN ===== */
@@ -466,8 +481,8 @@ body {
 }
 .version-tag {
     font-family: 'Patrick Hand', cursive;
-    font-size: 0.85rem;
-    color: rgba(90, 47, 16, 0.45);
+    font-size: 1.3rem;
+    color: rgba(90, 47, 16, 0.55);
     margin-top: 18px;
     user-select: none;
 }
