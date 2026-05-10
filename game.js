@@ -281,6 +281,11 @@ class Game {
         document.getElementById('help-close').addEventListener('click', () => {
             helpOverlay.classList.remove('show');
         });
+
+        // ⚡ Upgrade All button
+        document.getElementById('upgrade-all-btn').addEventListener('click', () => {
+            this.upgradeAllTowers();
+        });
     }
 
     doCountdown() {
@@ -437,6 +442,32 @@ class Game {
         this.updateHUD();
     }
 
+    upgradeAllTowers() {
+        const maxLevel = getMaxLevel(this.round);
+        let anyUpgraded = true;
+        while (anyUpgraded) {
+            anyUpgraded = false;
+            for (const tower of this.towers) {
+                if (tower.level >= maxLevel) continue;
+                const cost = tower.getUpgradeCost(maxLevel);
+                if (this.money >= cost) {
+                    this.money -= cost;
+                    tower.upgrade(cost, maxLevel);
+                    this.floatingTexts.push({
+                        x: tower.x * CONFIG.gridSize + CONFIG.gridSize / 2,
+                        y: tower.y * CONFIG.gridSize + CONFIG.gridSize / 2,
+                        text: `Nível ${tower.level + 1}!`,
+                        color: '#27ae60',
+                        life: 70
+                    });
+                    anyUpgraded = true;
+                }
+            }
+        }
+        this.renderTowerMenu();
+        this.updateHUD();
+    }
+
     toggleTowerMenu(tower) {
         if (this.selectedTower === tower) {
             this.hideTowerMenu();
@@ -550,6 +581,11 @@ class Game {
             const cost = TOWER_STATS[item.dataset.type].cost;
             item.classList.toggle('disabled', this.money < cost);
         });
+
+        const upgradeAllBtn = document.getElementById('upgrade-all-btn');
+        if (upgradeAllBtn) {
+            upgradeAllBtn.style.display = this.round >= 50 ? '' : 'none';
+        }
     }
 
     // ---------- A* pathfinding ----------

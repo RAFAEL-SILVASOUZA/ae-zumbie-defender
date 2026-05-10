@@ -916,6 +916,27 @@ body {
     transform: translateY(-1px);
 }
 
+/* ===== UPGRADE ALL BUTTON ===== */
+#upgrade-all-btn {
+    font-family: 'Bangers', cursive;
+    font-size: clamp(1.1rem, 2.6vw, 1.7rem);
+    background: linear-gradient(180deg, #ffe066, #f0a030);
+    color: #2c1810;
+    border: 2px solid #b87600;
+    border-radius: 5px;
+    padding: 2px 8px;
+    cursor: pointer;
+    box-shadow: 0 2px 0 #8a5a00;
+    transition: transform 0.1s, background 0.15s;
+    line-height: 1;
+    flex-shrink: 0;
+    display: none;
+}
+#upgrade-all-btn:hover {
+    background: linear-gradient(180deg, #fff0a0, #f5b840);
+    transform: translateY(-1px);
+}
+
 /* ===== HAMBURGER DROPDOWN MENU ===== */
 #hamburger-menu {
     position: absolute;
