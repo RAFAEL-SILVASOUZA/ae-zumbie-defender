@@ -94,7 +94,7 @@
         </div>
 
         <div id="hud">
-            <div class="stat money">💰 <span id="money">500</span></div>
+            <div class="stat money">💰 <span id="money">50</span></div>
             <div class="stat score">🏆 <span id="score">0</span></div>
             <div class="stat round-display">Round <span id="round">1</span></div>
             <div id="speed-control">
@@ -107,6 +107,7 @@
             <div class="stat health">❤️ <span id="health">20</span></div>
             <button id="upgrade-all-btn" title="Evoluir todas as torres">⚡</button>
             <button id="mute-btn" title="Mutar / Ativar música">🔊</button>
+            <button id="fullscreen-btn" title="Tela cheia">⛶</button>
             <button id="hamburger-btn" title="Menu">☰</button>
             <div id="hamburger-menu">
                 <div class="hm-item" id="hm-restart">🔄 Reiniciar</div>
@@ -176,10 +177,14 @@
                 <canvas class="icon" width="50" height="50"></canvas>
                 <span class="cost">$500</span>
             </div>
+            <div class="shop-item" data-type="drone"
+                title="Drone - não causa dano: captura um zumbi por vez e o leva de volta ao início (não pega chefes)">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$750</span>
+            </div>
         </div>
 
-        <div id="hint">Clique numa torre da loja e depois no campo · Clique numa torre colocada para Melhorar (até 3×)
-            ou Vender (50%) · ESC fecha · Use o controle de velocidade no topo</div>
+        <div id="hint">PC: clique numa torre da loja e depois no campo · Celular: arraste a torre da loja até o campo · Toque/clique numa torre colocada para Melhorar (até 3×) ou Vender (50%) · ESC fecha</div>
     </div>
     <audio id="bg-music" src="music.mp3" loop preload="auto"></audio>
     <audio id="boss-music" src="music_master.mp3" loop preload="auto"></audio>

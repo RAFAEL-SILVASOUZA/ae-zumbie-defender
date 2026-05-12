@@ -14,7 +14,9 @@ const CONFIG = {
     baseSpeed: 0.035,             // px/ms at round 1 for a normal zombie
     speedPerRound: 0.0015,
     maxRoundSpeedBonus: 0.04,
-    upgradeCostFactors: [0.7, 1.0, 1.5, 2.0, 2.8]
+    upgradeCostFactors: [0.7, 1.0, 1.5, 2.0, 2.8, 3.8],
+    hyperCost: 10000,
+    droneMaxAbductions: 12        // quantas vezes um drone pode recapturar o MESMO zumbi (evita travar a rodada)
 };
 
 function getMaxLevel(round) {
@@ -41,7 +43,8 @@ const TOWER_STATS = {
     rocket:     { range: 4.0, damage: 30, fireRate: 1300, cost: 150, splashRadius: 1.3, damageType: 'explosive', label: 'Foguete' },
     tesla:       { range: 4.0, damage: 80,  fireRate: 1100, cost: 200, chains: 3, chainRange: 2.5, chainFalloff: 0.65, damageType: 'energy', label: 'Tesla' },
     radioactive: { range: 2.5, damage: 100, fireRate: 2500, cost: 250, damageType: 'energy', label: 'Radioativa' },
-    knight:      { range: 99,  damage: 100, fireRate: 500,  cost: 500,  damageType: 'holy', label: 'Cavaleiro', mobile: true, moveSpeed: 0.13, cleaveFactor: 0.5, cleaveRange: 0.9 }
+    knight:      { range: 99,  damage: 100, fireRate: 500,  cost: 500,  damageType: 'holy', label: 'Cavaleiro', mobile: true, moveSpeed: 0.13, cleaveFactor: 0.5, cleaveRange: 0.9 },
+    drone:       { range: 99,  damage: 0,   fireRate: 0,    cost: 750,  damageType: 'none', label: 'Drone', mobile: true, isDrone: true, moveSpeed: 0.22 }
 };
 
 const ZOMBIE_STATS = {
@@ -138,6 +141,57 @@ class Game {
             localStorage.setItem('zombieDefenderMuted', this.muted ? '1' : '0');
             refreshMuteBtn();
         });
+
+        const fsBtn = document.getElementById('fullscreen-btn');
+        let _simFS = false;
+
+        const _isFS = () =>
+            !!(document.fullscreenElement || document.webkitFullscreenElement || _simFS);
+
+        const _updateFsBtn = () => {
+            const on = _isFS();
+            fsBtn.textContent = on ? '✕' : '⛶';
+            fsBtn.title = on ? 'Sair da tela cheia' : 'Tela cheia';
+        };
+
+        const _activateSim = () => {
+            _simFS = true;
+            document.getElementById('game-container').classList.add('fake-fullscreen');
+            _updateFsBtn();
+            setTimeout(fitCanvas, 60);
+        };
+
+        const _deactivateSim = () => {
+            _simFS = false;
+            document.getElementById('game-container').classList.remove('fake-fullscreen');
+            _updateFsBtn();
+            setTimeout(fitCanvas, 60);
+        };
+
+        const _enterFS = () => {
+            const el = document.documentElement;
+            const fn = el.requestFullscreen || el.webkitRequestFullscreen;
+            if (fn) {
+                fn.call(el).catch(_activateSim);
+            } else {
+                _activateSim();
+            }
+        };
+
+        const _exitFS = () => {
+            if (document.fullscreenElement || document.webkitFullscreenElement) {
+                const fn = document.exitFullscreen || document.webkitExitFullscreen;
+                if (fn) fn.call(document).catch(() => {});
+            }
+            if (_simFS) _deactivateSim();
+        };
+
+        fsBtn.addEventListener('click', () => _isFS() ? _exitFS() : _enterFS());
+
+        document.addEventListener('fullscreenchange', () => { _updateFsBtn(); setTimeout(fitCanvas, 80); });
+        document.addEventListener('webkitfullscreenchange', () => { _updateFsBtn(); setTimeout(fitCanvas, 80); });
+
+        _updateFsBtn();
     }
 
     // Chamada dentro do gesto do usuário (clique no botão Play) para destravar
@@ -295,7 +349,8 @@ class Game {
         });
         this.canvas.addEventListener('mouseleave', () => { this.hoverCell = null; });
 
-        // --- Touch: drag-and-drop preview on mobile ---
+        // --- Touch: drag-and-drop placement on mobile ---
+        // The preview (hoverCell) follows the finger; releasing commits the action.
         this.canvas.addEventListener('touchstart', (e) => {
             if (e.touches.length === 1) {
                 this.hoverCell = cellFromTouch(e.touches[0]);
@@ -309,53 +364,83 @@ class Game {
         }, { passive: true });
 
         this.canvas.addEventListener('touchend', (e) => {
-            if (this.gameOver) return;
-            if (!this.hoverCell) return;
-            const { x, y } = this.hoverCell;
-            if (x < 0 || x >= CONFIG.cols || y < 0 || y >= CONFIG.rows) {
-                this.hoverCell = null;
-                return;
-            }
-
+            if (this.gameOver || !this.hoverCell) return;
             // Prevent the synthetic click that fires after touchend
             e.preventDefault();
+            this.commitTouchPlacement();
+        });
 
-            const existing = this.findTowerAt(x, y);
-            if (existing) {
-                this.toggleTowerMenu(existing);
-                this.hoverCell = null;
-                return;
-            }
+        // Drag a tower straight from the shop onto the map (typical mobile UX).
+        // Starting the gesture on a shop item still scrolls the shop bar; only
+        // once the finger reaches the map do we "pick up" the tower.
+        const overCanvas = (clientX, clientY) => {
+            const r = this.canvas.getBoundingClientRect();
+            return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+        };
+        document.querySelectorAll('.shop-item').forEach(item => {
+            let dragging = false;
+            item.addEventListener('touchstart', (e) => {
+                dragging = false;
+                item._dragArmed = false;
+                if (e.touches.length !== 1) return;
+                const type = item.dataset.type;
+                if (this.money < TOWER_STATS[type].cost) return; // can't afford → behave like a normal tap
+                item._dragArmed = true;
+                item._dragType = type;
+            }, { passive: true });
 
-            this.hideTowerMenu();
+            item.addEventListener('touchmove', (e) => {
+                if (!item._dragArmed || e.touches.length !== 1) return;
+                const t = e.touches[0];
+                if (overCanvas(t.clientX, t.clientY)) {
+                    if (!dragging) {
+                        dragging = true;
+                        this.selectedTowerType = item._dragType;
+                        document.querySelectorAll('.shop-item').forEach(i => i.classList.remove('selected'));
+                        item.classList.add('selected');
+                        this.hideTowerMenu();
+                    }
+                    this.hoverCell = cellFromTouch(t);
+                    e.preventDefault(); // stop the shop bar from scrolling while placing
+                } else if (dragging) {
+                    this.hoverCell = null;
+                    e.preventDefault();
+                }
+            }, { passive: false });
 
-            if (!this.selectedTowerType) {
-                this.hoverCell = null;
-                return;
-            }
-            const cost = TOWER_STATS[this.selectedTowerType].cost;
-            if (this.money < cost) {
-                this.flashFloating(x, y, 'Sem $!', '#c0392b');
-                this.hoverCell = null;
-                return;
-            }
-            if (!this.canPlaceTower(x, y)) {
-                this.flashFloating(x, y, 'X', '#c0392b');
-                this.hoverCell = null;
-                return;
-            }
-            this.placeTower(x, y, this.selectedTowerType);
-            this.hoverCell = null;
+            const endDrag = (e) => {
+                item._dragArmed = false;
+                if (!dragging) return; // a plain tap → let the click handler toggle the selection
+                dragging = false;
+                if (e.cancelable) e.preventDefault(); // swallow the synthetic click after this touch
+                const t = e.changedTouches && e.changedTouches[0];
+                this.hoverCell = (t && overCanvas(t.clientX, t.clientY)) ? cellFromTouch(t) : null;
+                this.commitTouchPlacement();
+            };
+            item.addEventListener('touchend', endDrag, { passive: false });
+            item.addEventListener('touchcancel', () => {
+                item._dragArmed = false;
+                if (dragging) { dragging = false; this.hoverCell = null; }
+            });
         });
 
         this.canvas.addEventListener('click', (e) => {
             if (this.gameOver) return;
+            // A touch just resolved this spot; ignore the synthetic click it spawns.
+            const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+            if (this._lastTouchAction && now - this._lastTouchAction < 500) return;
             const { x, y } = cellFromEvent(e);
             if (x < 0 || x >= CONFIG.cols || y < 0 || y >= CONFIG.rows) return;
 
             const existing = this.findTowerAt(x, y);
             if (existing) {
-                this.toggleTowerMenu(existing);
+                if (this.selectedTowerType && this.selectedTowerType === existing.type
+                    && existing.goldenStacks < 2
+                    && this.money >= TOWER_STATS[this.selectedTowerType].cost) {
+                    this.mergeTower(existing, this.selectedTowerType);
+                } else {
+                    this.toggleTowerMenu(existing);
+                }
                 return;
             }
 
@@ -389,6 +474,36 @@ class Game {
                 });
             }
         });
+    }
+
+    // Resolve a pending touch (canvas tap or shop drag-and-drop) into an action,
+    // mirroring the desktop click handler. `hoverCell` holds the target cell.
+    commitTouchPlacement() {
+        const cell = this.hoverCell;
+        this.hoverCell = null;
+        if (this.gameOver || !cell) return;
+        this._lastTouchAction = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        const { x, y } = cell;
+        if (x < 0 || x >= CONFIG.cols || y < 0 || y >= CONFIG.rows) return;
+
+        const existing = this.findTowerAt(x, y);
+        if (existing) {
+            if (this.selectedTowerType && this.selectedTowerType === existing.type
+                && existing.goldenStacks < 2
+                && this.money >= TOWER_STATS[this.selectedTowerType].cost) {
+                this.mergeTower(existing, this.selectedTowerType);
+            } else {
+                this.toggleTowerMenu(existing);
+            }
+            return;
+        }
+
+        this.hideTowerMenu();
+        if (!this.selectedTowerType) return;
+        const cost = TOWER_STATS[this.selectedTowerType].cost;
+        if (this.money < cost) { this.flashFloating(x, y, 'Sem $!', '#c0392b'); return; }
+        if (!this.canPlaceTower(x, y)) { this.flashFloating(x, y, 'X', '#c0392b'); return; }
+        this.placeTower(x, y, this.selectedTowerType);
     }
 
     // ---------- start screen ----------
@@ -541,6 +656,34 @@ class Game {
         this.updateHUD();
     }
 
+    mergeTower(tower, type) {
+        if (tower.goldenStacks >= 2) {
+            this.flashFloating(tower.x, tower.y, 'MAX ⭐', '#f1c40f');
+            return;
+        }
+        const cost = TOWER_STATS[type].cost;
+        if (this.money < cost) {
+            this.flashFloating(tower.x, tower.y, 'Sem $!', '#c0392b');
+            return;
+        }
+        this.money -= cost;
+        tower.golden = true;
+        tower.goldenMult *= 2;
+        tower.goldenStacks++;
+        tower.totalInvested += cost;
+        tower.applyLevel();
+        this.floatingTexts.push({
+            x: tower.x * CONFIG.gridSize + CONFIG.gridSize / 2,
+            y: tower.y * CONFIG.gridSize + CONFIG.gridSize / 2,
+            text: 'DOURADA! x2 ⭐',
+            color: '#f1c40f',
+            life: 90
+        });
+        // mostra o menu da torre (também limpa a seleção da loja)
+        this.showTowerMenu(tower);
+        this.updateHUD();
+    }
+
     sellTower(tower) {
         const refund = Math.floor(tower.totalInvested * CONFIG.sellRefundFactor);
         this.money += refund;
@@ -580,27 +723,59 @@ class Game {
         this.updateHUD();
     }
 
-    upgradeAllTowers() {
+    hyperTower(tower) {
         const maxLevel = getMaxLevel(this.round);
+        if (tower.level < maxLevel || tower.hyper) return;
+        if (this.money < CONFIG.hyperCost) {
+            this.flashFloating(tower.x, tower.y, 'Sem $!', '#c0392b');
+            return;
+        }
+        this.money -= CONFIG.hyperCost;
+        tower.hyper = true;
+        tower.applyLevel();
+        this.floatingTexts.push({
+            x: tower.x * CONFIG.gridSize + CONFIG.gridSize / 2,
+            y: tower.y * CONFIG.gridSize + CONFIG.gridSize / 2,
+            text: 'HYPER! ⚡',
+            color: '#8e44ad',
+            life: 90
+        });
+        this.renderTowerMenu();
+        this.updateHUD();
+    }
+
+    upgradeAllTowers() {
+        if (!this.towers.length) return;
+        const maxLevel = getMaxLevel(this.round);
+        const upgraded = new Set();
         let anyUpgraded = true;
         while (anyUpgraded) {
             anyUpgraded = false;
             for (const tower of this.towers) {
                 if (tower.level >= maxLevel) continue;
                 const cost = tower.getUpgradeCost(maxLevel);
-                if (this.money >= cost) {
+                if (Number.isFinite(cost) && this.money >= cost) {
                     this.money -= cost;
                     tower.upgrade(cost, maxLevel);
-                    this.floatingTexts.push({
-                        x: tower.x * CONFIG.gridSize + CONFIG.gridSize / 2,
-                        y: tower.y * CONFIG.gridSize + CONFIG.gridSize / 2,
-                        text: `Nível ${tower.level + 1}!`,
-                        color: '#27ae60',
-                        life: 70
-                    });
+                    upgraded.add(tower);
                     anyUpgraded = true;
                 }
             }
+        }
+        if (upgraded.size) {
+            // um texto por torre melhorada (não um por nível) — evita poluir a tela
+            for (const tower of upgraded) {
+                this.floatingTexts.push({
+                    x: tower.x * CONFIG.gridSize + CONFIG.gridSize / 2,
+                    y: tower.y * CONFIG.gridSize + CONFIG.gridSize / 2,
+                    text: `Nível ${tower.level + 1}!`,
+                    color: '#27ae60',
+                    life: 70
+                });
+            }
+        } else {
+            const allMax = this.towers.every(t => t.level >= maxLevel);
+            this.flashFloating(this.end.x, 0, allMax ? 'Tudo no máximo!' : 'Sem $!', '#c0392b');
         }
         this.renderTowerMenu();
         this.updateHUD();
@@ -662,32 +837,44 @@ class Game {
                    (same ? '' : ` <span class="arrow">→ ${nxt}</span>`);
         };
 
+        const statsHtml = t.isDrone
+            ? `Não causa dano<br>Captura voadores 1 por vez<br>Leva o voador de volta ao início`
+            : `${stat('Dano', dmg, next ? Math.round(next.damage) : undefined)}<br>` +
+              `${stat('Alcance', range, nextRange)}<br>` +
+              `${stat('DPS', dps, next ? (next.damage / (next.fireRate / 1000)).toFixed(1) : undefined)}`;
+
+        let rightSlice;
+        if (isMax) {
+            rightSlice = t.hyper
+                ? `<div class="tm-slice tm-hyper" data-disabled="1">HYPER<br><strong>⚡ ATIVO ⚡</strong></div>`
+                : `<div class="tm-slice tm-hyper" data-action="hyper" ${this.money < CONFIG.hyperCost ? 'data-disabled="1"' : ''}>HYPER ⚡x10<br><strong>$${CONFIG.hyperCost}</strong></div>`;
+        } else {
+            rightSlice = `<div class="tm-slice tm-upgrade" data-action="upgrade" ${this.money < upgradeCost ? 'data-disabled="1"' : ''}>Melhorar<br><strong>$${upgradeCost}</strong></div>`;
+        }
+
         menu.innerHTML = `
             <!-- Fatia superior (maior) — informações da torre -->
             <div class="tm-top-slice">
-                <div class="tm-header">${stats.label}</div>
+                <div class="tm-header">${stats.label}${t.goldenStacks ? ' ' + '⭐'.repeat(t.goldenStacks) : ''}${t.hyper ? ' ⚡' : ''}</div>
                 <div class="tm-level">
                     Nível ${t.level + 1}/${maxLevel + 1}
                     <span class="tm-stars">${stars.join('')}</span>
                 </div>
                 <div class="tm-stats">
-                    ${stat('Dano', dmg, next ? Math.round(next.damage) : undefined)}<br>
-                    ${stat('Alcance', range, nextRange)}<br>
-                    ${stat('DPS', dps, next ? (next.damage / (next.fireRate / 1000)).toFixed(1) : undefined)}
+                    ${statsHtml}
                 </div>
             </div>
-            <!-- Fatias inferiores — vender (esquerda) e melhorar (direita) -->
+            <!-- Fatias inferiores — vender (esquerda) e melhorar/hyper (direita) -->
             <div class="tm-bottom-slices">
-                <div class="tm-slice tm-sell" data-action="sell" ${this.money < refund ? 'data-disabled="1"' : ''}>Vender<br><strong>+$${refund}</strong></div>
-				<div class="tm-slice tm-upgrade" data-action="upgrade" ${(isMax || this.money < upgradeCost) ? 'data-disabled="1"' : ''}>
-					${isMax ? 'MAX' : `Melhorar<br><strong>$${upgradeCost}</strong>`}
-				</div>
+                <div class="tm-slice tm-sell" data-action="sell">Vender<br><strong>+$${refund}</strong></div>
+				${rightSlice}
             </div>
         `;
 
         // Event listeners nas fatias clicáveis
         const sellSlice = menu.querySelector('[data-action="sell"]');
         const upgradeSlice = menu.querySelector('[data-action="upgrade"]');
+        const hyperSlice = menu.querySelector('[data-action="hyper"]');
 
         if (sellSlice) {
             sellSlice.addEventListener('click', (e) => {
@@ -703,6 +890,13 @@ class Game {
                 this.upgradeTower(t);
             });
         }
+        if (hyperSlice) {
+            hyperSlice.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (hyperSlice.dataset.disabled) return;
+                this.hyperTower(t);
+            });
+        }
 
         // Clicar na área de info (fora dos botões) fecha o modal
         menu.querySelector('.tm-top-slice').addEventListener('click', (e) => {
@@ -712,6 +906,7 @@ class Game {
     }
 
     updateHUD() {
+        if (!Number.isFinite(this.money)) this.money = 0;
         document.getElementById('money').innerText = this.money;
         document.getElementById('health').innerText = Math.max(0, this.health);
         document.getElementById('score').innerText = this.score;
@@ -724,7 +919,7 @@ class Game {
 
         const upgradeAllBtn = document.getElementById('upgrade-all-btn');
         if (upgradeAllBtn) {
-            upgradeAllBtn.style.display = this.round >= 50 ? '' : 'none';
+            upgradeAllBtn.style.display = '';
         }
     }
 
@@ -1208,6 +1403,10 @@ class Tower {
         this.baseRange = s.range * CONFIG.gridSize;
         this.baseFireRate = s.fireRate;
         this.level = 0;
+        this.hyper = false;
+        this.golden = false;
+        this.goldenMult = 1;
+        this.goldenStacks = 0;
         this.totalInvested = s.cost;
         this.lastShot = 0;
         this.angle = 0;
@@ -1215,12 +1414,16 @@ class Tower {
         this.spinAngle = 0;
         this.frozenUntil = 0;
         this.mobile = !!s.mobile;
+        this.isDrone = !!s.isDrone;
         if (this.mobile) {
             this.screenX = x * CONFIG.gridSize + CONFIG.gridSize / 2;
             this.screenY = y * CONFIG.gridSize + CONFIG.gridSize / 2;
             this.gallopPhase = 0;
             this.swingTime = 0;
             this.targetZombie = null;
+            this.carrying = null;     // drone: zumbi sendo carregado
+            this.dropCooldown = 0;    // drone: pausa após soltar
+            this.rotorSpin = 0;       // drone: ângulo das hélices
         }
         this.applyLevel();
     }
@@ -1229,15 +1432,21 @@ class Tower {
         const dmgMult = 1 + this.level * 0.55;     // +55% damage per level
         const rangeMult = 1 + this.level * 0.12;   // +12% range per level
         const rateMult = Math.pow(0.82, this.level); // ~18% faster per level
-        this.damage = this.baseDamage * dmgMult;
+        this.damage = this.baseDamage * dmgMult * (this.hyper ? 10 : 1) * this.goldenMult;
         this.range = this.baseRange * rangeMult;
         this.fireRate = this.baseFireRate * rateMult;
     }
 
     getUpgradeCost(maxLevel) {
         if (this.level >= maxLevel) return 0;
-        const factor = CONFIG.upgradeCostFactors[this.level];
-        return Math.max(1, Math.floor(TOWER_STATS[this.type].cost * factor));
+        const factors = CONFIG.upgradeCostFactors;
+        // se o nível passar do tamanho da tabela, extrapola a partir do último fator
+        const lastFactor = factors[factors.length - 1] || 1;
+        const factor = (this.level < factors.length && Number.isFinite(factors[this.level]))
+            ? factors[this.level]
+            : lastFactor * Math.pow(1.4, this.level - factors.length + 1);
+        const cost = Math.floor(TOWER_STATS[this.type].cost * factor);
+        return Number.isFinite(cost) ? Math.max(1, cost) : 1;
     }
 
     upgrade(paidCost, maxLevel) {
@@ -1270,6 +1479,11 @@ class Tower {
         // descongelou — limpa o timer
         if (this.frozenUntil > 0) this.frozenUntil = 0;
 
+        if (this.isDrone) {
+            this.updateDrone(time, dt, zombies, game);
+            return;
+        }
+
         if (this.mobile) {
             this.updateMobile(time, dt, zombies, game);
             return;
@@ -1291,6 +1505,86 @@ class Tower {
                 this.lastShot = time;
                 this.recoil = 6;
             }
+        }
+    }
+
+    updateDrone(time, dt, zombies, game) {
+        const stats = TOWER_STATS[this.type];
+        const speed = stats.moveSpeed * (1 + this.level * 0.12) * dt;
+        const homeX = this.x * CONFIG.gridSize + CONFIG.gridSize / 2;
+        const homeY = this.y * CONFIG.gridSize + CONFIG.gridSize / 2;
+        const startX = (game ? game.start.x : 0) * CONFIG.gridSize + CONFIG.gridSize / 2;
+        const startY = (game ? game.start.y : 0) * CONFIG.gridSize + CONFIG.gridSize / 2;
+        const endX = (game ? game.end.x : 0) * CONFIG.gridSize + CONFIG.gridSize / 2;
+        const endY = (game ? game.end.y : 0) * CONFIG.gridSize + CONFIG.gridSize / 2;
+
+        this.rotorSpin = (this.rotorSpin + dt * 0.06) % (Math.PI * 2);
+        if (this.dropCooldown > 0) this.dropCooldown -= dt;
+
+        const moveToward = (tx, ty) => {
+            const dx = tx - this.screenX, dy = ty - this.screenY;
+            const d = Math.hypot(dx, dy);
+            if (d <= speed) { this.screenX = tx; this.screenY = ty; return true; }
+            this.screenX += (dx / d) * speed;
+            this.screenY += (dy / d) * speed;
+            return false;
+        };
+
+        // o alvo carregado deixou de ser válido?
+        if (this.carrying && (this.carrying.health <= 0 || this.carrying.reachedEnd || !zombies.includes(this.carrying))) {
+            if (this.carrying) this.carrying.carried = false;
+            this.carrying = null;
+        }
+
+        if (this.carrying) {
+            // levando o zumbi de volta ao início
+            const arrived = moveToward(startX, startY);
+            this.carrying.screenX = this.screenX;
+            this.carrying.screenY = this.screenY + 14;
+            if (arrived) {
+                const z = this.carrying;
+                z.carried = false;
+                z.abductions++;
+                z.screenX = startX;
+                z.screenY = startY;
+                if (game) {
+                    z.path = [...game.currentPath];
+                    z.pathIndex = Math.min(1, z.path.length - 1);
+                    z.recalcPath(game);
+                    game.floatingTexts.push({ x: startX, y: startY - 18, text: '↩ voltou!', color: '#2980b9', life: 55 });
+                }
+                this.carrying = null;
+                this.dropCooldown = 500;
+            }
+            return;
+        }
+
+        // procurar um zumbi para pegar — o mais avançado (mais perto do fim)
+        let best = null, bestDist = Infinity;
+        if (this.dropCooldown <= 0) {
+            for (const z of zombies) {
+                if (z.health <= 0 || z.carried || z.reachedEnd) continue;
+                if (!ZOMBIE_STATS[z.type]?.flying) continue;                     // drone só pega voadores
+                if (z.abductions >= CONFIG.droneMaxAbductions) continue;        // limite por zumbi
+                // ignora zumbis colados no spawn (recém-soltos) — senão o drone fica num loop
+                if (Math.hypot(z.screenX - startX, z.screenY - startY) < CONFIG.gridSize * 1.5) continue;
+                const d = Math.hypot(z.screenX - endX, z.screenY - endY);
+                if (d < bestDist) { bestDist = d; best = z; }
+            }
+        }
+
+        if (best) {
+            const grabbed = moveToward(best.screenX, best.screenY);
+            const close = Math.hypot(best.screenX - this.screenX, best.screenY - this.screenY) < 16;
+            if (grabbed || close) {
+                if (!best.carried && best.health > 0) {
+                    best.carried = true;
+                    this.carrying = best;
+                }
+            }
+        } else {
+            // sem alvo: volta para a base e paira
+            moveToward(homeX, homeY);
         }
     }
 
@@ -1516,6 +1810,32 @@ class Tower {
             case 'radioactive': this.drawRadioactive(ctx); break;
         }
 
+        // brilho dourado se a torre foi fundida com outra igual
+        if (this.golden) {
+            ctx.fillStyle = 'rgba(241, 196, 15, 0.4)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 19, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(243, 156, 18, 0.95)';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, 20.5, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // aura roxa se a torre for HYPER
+        if (this.hyper) {
+            ctx.fillStyle = 'rgba(155, 89, 182, 0.45)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 19, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(106, 27, 154, 0.95)';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, 20, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
         // level stars above the tower
         if (this.level > 0) {
             const starY = -22;
@@ -1564,22 +1884,49 @@ class Tower {
         const distFromHome = Math.hypot(this.screenX - homeX, this.screenY - homeY);
 
         // bandeira/estandarte na "casa" — só aparece quando o cavaleiro saiu
-        if (distFromHome > 14) {
+        if (this.type === 'knight' && distFromHome > 14) {
             this.drawKnightHome(ctx, homeX, homeY);
         }
 
-        // sombra do cavaleiro
+        // sombra
         ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
         ctx.beginPath();
-        ctx.ellipse(this.screenX, this.screenY + 14, 18, 5, 0, 0, Math.PI * 2);
+        ctx.ellipse(this.screenX, this.screenY + (this.isDrone ? 20 : 14), this.isDrone ? 13 : 18, this.isDrone ? 4 : 5, 0, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.save();
         ctx.translate(this.screenX, this.screenY);
         const facing = Math.cos(this.angle || 0) >= 0 ? 1 : -1;
-        if (facing < 0) ctx.scale(-1, 1);
+        if (facing < 0 && !this.isDrone) ctx.scale(-1, 1);
 
         if (this.type === 'knight') this.drawKnight(ctx);
+        else if (this.type === 'drone') this.drawDrone(ctx);
+
+        // brilho dourado se a unidade foi fundida com outra igual
+        if (this.golden) {
+            ctx.fillStyle = 'rgba(241, 196, 15, 0.35)';
+            ctx.beginPath();
+            ctx.arc(0, -4, 22, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(243, 156, 18, 0.95)';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(0, -4, 23.5, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // aura roxa se a unidade for HYPER
+        if (this.hyper) {
+            ctx.fillStyle = 'rgba(155, 89, 182, 0.4)';
+            ctx.beginPath();
+            ctx.arc(0, -4, 22, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(106, 27, 154, 0.95)';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(0, -4, 23, 0, Math.PI * 2);
+            ctx.stroke();
+        }
 
         // estrelas de nível
         if (this.level > 0) {
@@ -1617,6 +1964,76 @@ class Tower {
             ctx.arc(-4, 8, 1.2, 0, Math.PI * 2);
             ctx.fill();
         }
+
+        ctx.restore();
+    }
+
+    drawDrone(ctx) {
+        const spin = this.rotorSpin || 0;
+        const bob = Math.sin(spin * 5) * 1.2;
+        ctx.save();
+        ctx.translate(0, bob);
+
+        // feixe de captura quando carregando um zumbi
+        if (this.carrying) {
+            ctx.fillStyle = 'rgba(46, 204, 113, 0.20)';
+            ctx.beginPath();
+            ctx.moveTo(-4, 6); ctx.lineTo(4, 6); ctx.lineTo(12, 28); ctx.lineTo(-12, 28); ctx.closePath();
+            ctx.fill();
+        }
+
+        const arm = 14;
+        const rotors = [[1, 1], [-1, 1], [1, -1], [-1, -1]];
+
+        // braços em X
+        ctx.strokeStyle = '#34495e';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        for (const [sx, sy] of rotors) {
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(sx * arm, sy * arm * 0.7);
+            ctx.stroke();
+        }
+
+        // hélices girando
+        for (const [sx, sy] of rotors) {
+            const hx = sx * arm, hy = sy * arm * 0.7;
+            ctx.fillStyle = 'rgba(120, 144, 156, 0.28)';
+            ctx.beginPath(); ctx.arc(hx, hy, 7, 0, Math.PI * 2); ctx.fill();
+            inkStroke(ctx, 1.3);
+            ctx.fillStyle = '#5d6d7e';
+            ctx.beginPath(); ctx.arc(hx, hy, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.save();
+            ctx.translate(hx, hy);
+            ctx.rotate(spin * (sx * sy > 0 ? 1 : -1));
+            ctx.strokeStyle = 'rgba(44, 24, 16, 0.45)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(-7, 0); ctx.lineTo(7, 0); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(0, 7); ctx.stroke();
+            ctx.restore();
+        }
+
+        // corpo central
+        inkStroke(ctx, 1.8);
+        ctx.fillStyle = '#2c3e50';
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(-8, -6.5, 16, 13, 3);
+        else ctx.rect(-8, -6.5, 16, 13);
+        ctx.fill(); ctx.stroke();
+
+        // sensor / "olho"
+        ctx.fillStyle = this.carrying ? '#2ecc71' : '#3498db';
+        ctx.beginPath(); ctx.arc(0, 0, 3.2, 0, Math.PI * 2); ctx.fill();
+        inkStroke(ctx, 1); ctx.stroke();
+
+        // garra embaixo
+        ctx.strokeStyle = '#5d6d7e';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 6); ctx.lineTo(0, 10);
+        ctx.moveTo(-3.5, 13); ctx.quadraticCurveTo(0, 9, 3.5, 13);
+        ctx.stroke();
 
         ctx.restore();
     }
@@ -2275,6 +2692,8 @@ class Zombie {
         this.poisonDamagePerMs = 0;
         this.iceArmorBroken = false;
         this.reachedEnd = false;
+        this.carried = false;
+        this.abductions = 0;        // quantas vezes um drone já o levou ao início
         this.bobPhase = Math.random() * Math.PI * 2;
         this.facing = 1;
         this.deathBomb = false;
@@ -2332,6 +2751,11 @@ class Zombie {
     }
 
     update(dt, game) {
+        // sendo carregado por um drone — não se move sozinho
+        if (this.carried) {
+            this.bobPhase += dt * 0.012;
+            return;
+        }
         if (this.slowTimer > 0) {
             this.slowTimer -= dt;
             if (this.slowTimer <= 0) this.speed = this.baseSpeed;
@@ -2946,10 +3370,29 @@ function configureLayout() {
     // CONFIG.gridSize stays at 50
 }
 
-// canvas-wrap fills canvas-frame responsively via CSS.
-// The canvas element scales to fill its container.
 function fitCanvas() {
-    // No-op: CSS handles responsive sizing now.
+    const frame = document.querySelector('.canvas-frame');
+    const canvas = document.getElementById('gameCanvas');
+    if (!frame || !canvas || !canvas.width || !canvas.height) return;
+
+    const frameW = frame.clientWidth;
+    const frameH = frame.clientHeight;
+    if (!frameW || !frameH) return;
+
+    const canvasAspect = canvas.width / canvas.height;
+    const frameAspect = frameW / frameH;
+
+    let cssW, cssH;
+    if (canvasAspect > frameAspect) {
+        cssW = frameW;
+        cssH = Math.round(frameW / canvasAspect);
+    } else {
+        cssH = frameH;
+        cssW = Math.round(frameH * canvasAspect);
+    }
+
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
 }
 
 function renderShopThumbnails() {
@@ -3027,7 +3470,7 @@ function renderWeaponsTab() {
 
     const entries = Object.entries(TOWER_STATS);
     grid.innerHTML = entries.map(([type, stats]) => {
-        const dps = (stats.damage / (stats.fireRate / 1000)).toFixed(1);
+        const dps = stats.isDrone ? '—' : (stats.damage / (stats.fireRate / 1000)).toFixed(1);
         const rangeGrid = stats.mobile ? '∞' : (stats.range).toFixed(1);
 
         let specialText = '';
@@ -3036,6 +3479,7 @@ function renderWeaponsTab() {
         if (stats.chains) specialText = `Cadeia: ${stats.chains}`;
         if (stats.damageType === 'poison') specialText = 'Slow + Dano contínuo';
         if (stats.mobile) specialText = 'Persegue zumbis · Cleave · Holy';
+        if (stats.isDrone) specialText = 'Captura voadores e leva ao início';
 
         return `
             <div class="help-card">
@@ -3151,6 +3595,9 @@ function rateWeaponVsMonster(weaponType, monsterType) {
     // Cavaleiro: dano holy ignora todas as imunidades + cleave + persegue
     if (weaponType === 'knight') return 3;
 
+    // Drone: captura apenas voadores
+    if (weaponType === 'drone') return mStats.flying ? 3 : 0;
+
     let rating = 2; // bom por padrão
 
     // Voadores: espinhos inúteis
@@ -3225,11 +3672,35 @@ new Game();
 renderShopThumbnails();
 renderHelpContent();
 setInterval(renderShopThumbnails, 80);
-fitCanvas();
+
+// Fit immediately, then again after layout settles (fonts may still be loading)
+requestAnimationFrame(() => {
+    fitCanvas();
+    requestAnimationFrame(fitCanvas);
+});
+document.fonts.ready.then(fitCanvas);
+
 window.addEventListener('resize', fitCanvas);
 window.addEventListener('orientationchange', () => {
     fitCanvas();
     setTimeout(fitCanvas, 200);
 });
-setTimeout(fitCanvas, 80);
-setTimeout(fitCanvas, 400);
+
+// Watch for container size changes (e.g. virtual keyboard, font reflow)
+const _ro = new ResizeObserver(fitCanvas);
+_ro.observe(document.querySelector('.canvas-frame'));
+
+// iOS PWA (atalho na tela inicial): o viewport real só se estabiliza
+// alguns frames depois do load. visualViewport é mais confiável que
+// window resize nesse contexto.
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', fitCanvas);
+}
+
+// pageshow dispara quando o app abre do atalho iOS (inclusive via cache).
+// A cascata de timeouts garante que ao menos uma chamada aconteça depois
+// que o iOS terminar de calcular as safe-area insets e o layout final.
+window.addEventListener('pageshow', () => {
+    fitCanvas();
+    [150, 400, 900, 1800].forEach(ms => setTimeout(fitCanvas, ms));
+});

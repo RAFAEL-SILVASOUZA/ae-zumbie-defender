@@ -24,6 +24,22 @@ body {
     -webkit-user-select: none;
 }
 
+/* Fullscreen simulado para iOS/browsers sem suporte à Fullscreen API */
+#game-container.fake-fullscreen {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    width: 100dvw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    border: none !important;
+    z-index: 9999 !important;
+}
+
 #game-container {
     position: relative;
     background:
@@ -149,10 +165,8 @@ body {
 
 #gameCanvas {
     display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
     cursor: crosshair;
+    /* width/height set explicitly by fitCanvas() */
 }
 
 #round-banner {
@@ -442,6 +456,18 @@ body {
 }
 #tower-menu .tm-sell {
     background: linear-gradient(180deg, #fad7d3, #e88a7e);
+}
+#tower-menu .tm-hyper {
+    background: linear-gradient(180deg, #b06bd6, #6a1b9a);
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+#tower-menu .tm-hyper:not([data-disabled="1"]) {
+    animation: hyperPulse 0.9s ease-in-out infinite;
+}
+@keyframes hyperPulse {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.25); }
 }
 
 /* ===== START SCREEN ===== */
@@ -896,6 +922,26 @@ body {
     align-self: center;
 }
 
+/* ===== FULLSCREEN BUTTON ===== */
+#fullscreen-btn {
+    font-family: 'Bangers', cursive;
+    font-size: clamp(1.1rem, 2.6vw, 1.7rem);
+    background: linear-gradient(180deg, #f0dcb0, #c9a87a);
+    color: #2c1810;
+    border: 2px solid #6b3410;
+    border-radius: 5px;
+    padding: 2px 8px;
+    cursor: pointer;
+    box-shadow: 0 2px 0 #4a2710;
+    transition: transform 0.1s, background 0.15s;
+    line-height: 1;
+    flex-shrink: 0;
+}
+#fullscreen-btn:hover {
+    background: linear-gradient(180deg, #ffe9bf, #d8b88a);
+    transform: translateY(-1px);
+}
+
 /* ===== HAMBURGER BUTTON ===== */
 #hamburger-btn {
     font-family: 'Bangers', cursive;
@@ -930,7 +976,6 @@ body {
     transition: transform 0.1s, background 0.15s;
     line-height: 1;
     flex-shrink: 0;
-    display: none;
 }
 #upgrade-all-btn:hover {
     background: linear-gradient(180deg, #fff0a0, #f5b840);
