@@ -44,7 +44,8 @@ const TOWER_STATS = {
     tesla:       { range: 4.0, damage: 80,  fireRate: 1100, cost: 200, chains: 3, chainRange: 2.5, chainFalloff: 0.65, damageType: 'energy', label: 'Tesla' },
     radioactive: { range: 2.5, damage: 100, fireRate: 2500, cost: 250, damageType: 'energy', label: 'Radioativa' },
     knight:      { range: 99,  damage: 100, fireRate: 500,  cost: 500,  damageType: 'holy', label: 'Cavaleiro', mobile: true, moveSpeed: 0.13, cleaveFactor: 0.5, cleaveRange: 0.9 },
-    drone:       { range: 99,  damage: 0,   fireRate: 0,    cost: 750,  damageType: 'none', label: 'Drone', mobile: true, isDrone: true, moveSpeed: 0.22 }
+    drone:       { range: 99,  damage: 0,   fireRate: 0,    cost: 750,  damageType: 'none', label: 'Drone', mobile: true, isDrone: true, moveSpeed: 0.22 },
+    laser:       { range: 0.6, damage: 200, fireRate: 800,  cost: 180,  damageType: 'energy', label: 'Parede Laser' }
 };
 
 const ZOMBIE_STATS = {
@@ -624,11 +625,15 @@ class Game {
         return this.towers.find(t => t.x === x && t.y === y) || null;
     }
 
-    canPlaceTower(x, y) {
+    canPlaceTower(x, y, type) {
+        const towerType = type || this.selectedTowerType;
         if (x < 0 || x >= CONFIG.cols || y < 0 || y >= CONFIG.rows) return false;
         if (x === this.start.x && y === this.start.y) return false;
         if (x === this.end.x && y === this.end.y) return false;
-        if (this.grid[x][y] === 1) return false;
+        if (this.grid[x][y] !== 0) return false; // célula ocupada por qualquer torre
+
+        // Parede Laser não bloqueia o caminho — pode ser colocada em qualquer célula livre
+        if (towerType === 'laser') return true;
 
         this.grid[x][y] = 1;
         const path = this.findPath();
@@ -649,7 +654,8 @@ class Game {
     placeTower(x, y, type) {
         const cost = TOWER_STATS[type].cost;
         this.money -= cost;
-        this.grid[x][y] = 1;
+        // Parede Laser usa grid=2 (ocupada mas caminhável pelo pathfinding)
+        this.grid[x][y] = type === 'laser' ? 2 : 1;
         this.towers.push(new Tower(x, y, type));
         this.updatePath();
         for (const z of this.zombies) z.recalcPath(this);
@@ -1489,6 +1495,11 @@ class Tower {
             return;
         }
 
+        if (this.type === 'laser') {
+            this.updateLaserWall(time, zombies, game);
+            return;
+        }
+
         const target = this.findTarget(zombies);
         if (target) {
             const cx = this.x * CONFIG.gridSize + CONFIG.gridSize/2;
@@ -1753,6 +1764,43 @@ class Tower {
         projectiles.push(bolt);
     }
 
+    updateLaserWall(time, zombies, game) {
+        if (!this.laserHits) this.laserHits = new Map();
+
+        const cx = this.x * CONFIG.gridSize + CONFIG.gridSize / 2;
+        const cy = this.y * CONFIG.gridSize + CONFIG.gridSize / 2;
+        const r2 = this.range * this.range;
+        const damageType = TOWER_STATS.laser.damageType;
+        // cooldown por zumbi: menor que o tempo de travessia do zumbi mais rápido
+        const hitCooldown = 300;
+
+        let hitAny = false;
+        for (const z of zombies) {
+            if (z.health <= 0) continue;
+            const dx = z.screenX - cx, dy = z.screenY - cy;
+            if (dx * dx + dy * dy > r2) continue;
+
+            const lastHit = this.laserHits.get(z) || 0;
+            if (time - lastHit < hitCooldown) continue;
+
+            const zStats = ZOMBIE_STATS[z.type];
+            if (zStats?.immuneTo?.includes(damageType)) {
+                if (game) game.floatingTexts.push({ x: z.screenX, y: z.screenY - 18, text: 'imune!', color: '#aaa', life: 40 });
+            } else {
+                z.applyDamage(this.damage, game);
+                hitAny = true;
+            }
+            this.laserHits.set(z, time);
+        }
+
+        if (hitAny) this.recoil = 6;
+
+        // limpa zumbis mortos ou fora do jogo do mapa
+        for (const z of this.laserHits.keys()) {
+            if (z.health <= 0 || !zombies.includes(z)) this.laserHits.delete(z);
+        }
+    }
+
     findChainTarget(zombies, fromZ, exclude, range) {
         let best = null;
         let bestDist = Infinity;
@@ -1808,6 +1856,7 @@ class Tower {
             case 'rocket':     this.drawRocket(ctx); break;
             case 'tesla':      this.drawTesla(ctx); break;
             case 'radioactive': this.drawRadioactive(ctx); break;
+            case 'laser':      this.drawLaserWall(ctx); break;
         }
 
         // brilho dourado se a torre foi fundida com outra igual
@@ -2668,6 +2717,93 @@ class Tower {
             ctx.stroke();
         }
     }
+
+    drawLaserWall(ctx) {
+        const t = performance.now() * 0.002;
+        inkStroke(ctx, 2);
+
+        if (this.level >= 6) {
+            // ---- PLASMA STYLE (último upgrade) ----
+            ctx.fillStyle = '#12082e';
+            roundRect(ctx, -18, -22, 36, 7, 3);
+            ctx.fill(); ctx.stroke();
+            roundRect(ctx, -18, 12, 36, 7, 3);
+            ctx.fill(); ctx.stroke();
+
+            // Campo de plasma
+            const pGrad = ctx.createLinearGradient(0, -15, 0, 12);
+            pGrad.addColorStop(0,   'rgba(100, 0, 220, 0.7)');
+            pGrad.addColorStop(0.5, 'rgba(200, 50, 255, 0.9)');
+            pGrad.addColorStop(1,   'rgba(100, 0, 220, 0.7)');
+            ctx.fillStyle = pGrad;
+            ctx.fillRect(-18, -15, 36, 27);
+
+            // Arcos elétricos animados
+            for (let i = 0; i < 4; i++) {
+                const xp = -12 + i * 8;
+                const bend = Math.sin(t * 5 + i * 1.3) * 6;
+                ctx.strokeStyle = `rgba(230, 190, 255, ${0.6 + Math.sin(t * 7 + i) * 0.4})`;
+                ctx.lineWidth = 1.8;
+                ctx.beginPath();
+                ctx.moveTo(xp, -15);
+                ctx.quadraticCurveTo(xp + bend, -1, xp - bend, 12);
+                ctx.stroke();
+            }
+
+            // Borda brilhante
+            ctx.strokeStyle = `rgba(180, 80, 255, ${0.6 + Math.sin(t * 4) * 0.3})`;
+            ctx.lineWidth = 2.5;
+            ctx.strokeRect(-18, -15, 36, 27);
+
+            // Nós de energia nos emissores
+            ctx.fillStyle = `rgba(220, 160, 255, ${0.8 + Math.sin(t * 6) * 0.2})`;
+            for (const xn of [-12, -4, 4, 12]) {
+                ctx.beginPath(); ctx.arc(xn, -18, 2.5, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(xn, 15, 2.5, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Flash ao acertar
+            if (this.recoil > 0) {
+                ctx.fillStyle = `rgba(220, 100, 255, ${this.recoil / 6 * 0.5})`;
+                ctx.fillRect(-18, -15, 36, 27);
+            }
+
+        } else {
+            // ---- ESTILO NORMAL (raios laser vermelhos) ----
+            ctx.fillStyle = '#5a3a1a';
+            roundRect(ctx, -16, -22, 32, 7, 3);
+            ctx.fill(); ctx.stroke();
+            roundRect(ctx, -16, 12, 32, 7, 3);
+            ctx.fill(); ctx.stroke();
+
+            // Nós emissores vermelhos
+            ctx.fillStyle = '#ff4444';
+            for (const xn of [-10, -3, 4, 11]) {
+                ctx.beginPath(); ctx.arc(xn, -18, 2, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(xn, 15, 2, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Raios laser animados
+            const flicker = 0.7 + 0.3 * Math.sin(t * 5);
+            const hitBoost = this.recoil > 0 ? this.recoil / 6 : 0;
+            const alpha = Math.min(1, flicker + hitBoost * 0.5);
+
+            for (const xb of [-10, -3, 4, 11]) {
+                // Brilho externo
+                ctx.strokeStyle = `rgba(255, 60, 60, ${alpha * 0.4})`;
+                ctx.lineWidth = 6;
+                ctx.beginPath();
+                ctx.moveTo(xb, -15); ctx.lineTo(xb, 12);
+                ctx.stroke();
+                // Núcleo do raio
+                ctx.strokeStyle = `rgba(255, 230, 230, ${alpha})`;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(xb, -15); ctx.lineTo(xb, 12);
+                ctx.stroke();
+            }
+        }
+    }
 }
 
 class Zombie {
@@ -3480,6 +3616,7 @@ function renderWeaponsTab() {
         if (stats.damageType === 'poison') specialText = 'Slow + Dano contínuo';
         if (stats.mobile) specialText = 'Persegue zumbis · Cleave · Holy';
         if (stats.isDrone) specialText = 'Captura voadores e leva ao início';
+        if (type === 'laser') specialText = 'Queima tudo que atravessa · Lv6: Plasma';
 
         return `
             <div class="help-card">
