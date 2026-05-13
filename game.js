@@ -1818,6 +1818,47 @@ class Tower {
     }
 
     updateMago(time, dt, zombies, game) {
+        // teleporta para célula aleatória a cada 10 s
+        if (this._moveTimer === undefined) this._moveTimer = 10000;
+        this._moveTimer -= dt;
+        if (this._moveTimer <= 0 && game) {
+            this._moveTimer = 10000;
+            // libera célula atual
+            game.grid[this.x][this.y] = 0;
+            // tenta até 30 células aleatórias
+            let moved = false;
+            for (let attempt = 0; attempt < 30; attempt++) {
+                const nx = Math.floor(Math.random() * CONFIG.cols);
+                const ny = Math.floor(Math.random() * CONFIG.rows);
+                if (game.grid[nx][ny] !== 0) continue;
+                if (nx === game.start.x && ny === game.start.y) continue;
+                if (nx === game.end.x   && ny === game.end.y)   continue;
+                // verifica se não bloqueia o caminho
+                game.grid[nx][ny] = 1;
+                const path = game.findPath();
+                let ok = !!path;
+                if (ok) {
+                    for (const z of zombies) {
+                        if (ZOMBIE_STATS[z.type]?.flying) continue;
+                        const gx = Math.floor(z.screenX / CONFIG.gridSize);
+                        const gy = Math.floor(z.screenY / CONFIG.gridSize);
+                        if (gx === nx && gy === ny) { ok = false; break; }
+                        if (!game.findPath(gx, gy)) { ok = false; break; }
+                    }
+                }
+                if (!ok) { game.grid[nx][ny] = 0; continue; }
+                // move
+                this.x = nx;
+                this.y = ny;
+                game.updatePath();
+                for (const z of zombies) z.recalcPath(game);
+                game.floatingTexts.push({ x: nx * CONFIG.gridSize + CONFIG.gridSize/2, y: ny * CONFIG.gridSize, text: '✦ teleporte!', color: '#9b59b6', life: 60 });
+                moved = true;
+                break;
+            }
+            if (!moved) game.grid[this.x][this.y] = 1; // restaura se não achou lugar
+        }
+
         const cx = this.x * CONFIG.gridSize + CONFIG.gridSize / 2;
         const cy = this.y * CONFIG.gridSize + CONFIG.gridSize / 2;
         const r2 = this.range * this.range;
