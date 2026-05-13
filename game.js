@@ -45,7 +45,7 @@ const TOWER_STATS = {
     radioactive: { range: 2.5, damage: 100, fireRate: 2500, cost: 250, damageType: 'energy', label: 'Radioativa' },
     knight:      { range: 99,  damage: 100, fireRate: 500,  cost: 500,  damageType: 'holy', label: 'Cavaleiro', mobile: true, moveSpeed: 0.13, cleaveFactor: 0.5, cleaveRange: 0.9 },
     drone:       { range: 99,  damage: 0,   fireRate: 0,    cost: 750,  damageType: 'none', label: 'Drone', mobile: true, isDrone: true, moveSpeed: 0.22 },
-    laser:       { range: 0.6, damage: 200, fireRate: 800,  cost: 180,  damageType: 'energy', label: 'Parede Laser' }
+    laser:       { range: 0.6, damage: 200, fireRate: 800,  cost: 1000, damageType: 'energy', label: 'Parede Laser', unlockRound: 50 }
 };
 
 const ZOMBIE_STATS = {
@@ -919,8 +919,13 @@ class Game {
         document.getElementById('round').innerText = this.round;
 
         document.querySelectorAll('.shop-item').forEach(item => {
-            const cost = TOWER_STATS[item.dataset.type].cost;
-            item.classList.toggle('disabled', this.money < cost);
+            const stats = TOWER_STATS[item.dataset.type];
+            if (stats.unlockRound && this.round < stats.unlockRound) {
+                item.style.display = 'none';
+                return;
+            }
+            item.style.display = '';
+            item.classList.toggle('disabled', this.money < stats.cost);
         });
 
         const upgradeAllBtn = document.getElementById('upgrade-all-btn');
@@ -2936,11 +2941,12 @@ class Zombie {
             this.screenY += (dy / dist) * move;
         }
 
-        // zumbi de gelo congela torres ao passar (cavaleiros são imunes)
+        // zumbi de gelo congela torres ao passar (cavaleiros e parede laser são imunes)
         if (ZOMBIE_STATS[this.type].freezesTowers && game) {
             const freezeRange = CONFIG.gridSize * 1.2;
             for (const t of game.towers) {
                 if (t.mobile) continue;
+                if (t.type === 'laser') continue;
                 const tcx = t.x * CONFIG.gridSize + CONFIG.gridSize / 2;
                 const tcy = t.y * CONFIG.gridSize + CONFIG.gridSize / 2;
                 const d = Math.hypot(this.screenX - tcx, this.screenY - tcy);

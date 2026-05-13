@@ -5,7 +5,8 @@
       "WebFetch(domain:www.zigg.com.br)",
       "Bash(node --check \"C:\\\\Users\\\\rafae\\\\ae-zombie-defender\\\\game.js\")",
       "Bash(git log *)",
-      "Bash(node --check game.js)"
+      "Bash(node --check game.js)",
+      "Bash(dir C:\\\\Users\\\\rafae\\\\ae-zombie-defender\\\\ *)"
     ]
   }
 }
