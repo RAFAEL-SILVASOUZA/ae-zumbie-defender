@@ -14,7 +14,7 @@ const CONFIG = {
     baseSpeed: 0.035,             // px/ms at round 1 for a normal zombie
     speedPerRound: 0.0015,
     maxRoundSpeedBonus: 0.04,
-    upgradeCostFactors: [0.7, 1.0, 1.5, 2.0, 2.8, 3.8],
+    upgradeCostFactors: [0.7, 1.0, 1.5, 2.0, 2.8, 3.8, 5.2, 7.0, 9.5, 13.0],
     hyperCost: 10000,
     droneMaxAbductions: 12        // quantas vezes um drone pode recapturar o MESMO zumbi (evita travar a rodada)
 };
@@ -23,7 +23,11 @@ function getMaxLevel(round) {
     if (round <= 10) return 3;
     if (round <= 20) return 4;
     if (round <= 30) return 5;
-    return 6;
+    if (round <= 40) return 6;
+    if (round <= 50) return 7;
+    if (round <= 60) return 8;
+    if (round <= 70) return 9;
+    return 10;
 }
 
 const COLORS = {
@@ -45,7 +49,8 @@ const TOWER_STATS = {
     radioactive: { range: 2.5, damage: 100, fireRate: 2500, cost: 250, damageType: 'energy', label: 'Radioativa' },
     knight:      { range: 99,  damage: 100, fireRate: 500,  cost: 500,  damageType: 'holy', label: 'Cavaleiro', mobile: true, moveSpeed: 0.13, cleaveFactor: 0.5, cleaveRange: 0.9 },
     drone:       { range: 99,  damage: 0,   fireRate: 0,    cost: 750,  damageType: 'none', label: 'Drone', mobile: true, isDrone: true, moveSpeed: 0.22 },
-    laser:       { range: 0.6, damage: 200, fireRate: 800,  cost: 1000, damageType: 'energy', label: 'Parede Laser', unlockRound: 50 }
+    laser:       { range: 0.6, damage: 200, fireRate: 800,  cost: 1000, damageType: 'energy', label: 'Parede Laser', unlockRound: 70 },
+    mago:        { range: 5,   damage: 45,  fireRate: 650,  cost: 50,   damageType: 'magic',  label: 'Mago',         isWizard: true, unlockRound: 60 }
 };
 
 const ZOMBIE_STATS = {
@@ -1206,6 +1211,7 @@ class Game {
                 if (p.dead) this.projectiles.splice(i, 1);
             }
 
+
             // alterna música normal/boss conforme presença do mestre
             this.updateMusicTrack();
         }
@@ -1502,6 +1508,11 @@ class Tower {
 
         if (this.type === 'laser') {
             this.updateLaserWall(time, zombies, game);
+            return;
+        }
+
+        if (this.type === 'mago') {
+            this.updateMago(time, dt, zombies, game);
             return;
         }
 
@@ -1806,6 +1817,68 @@ class Tower {
         }
     }
 
+    updateMago(time, dt, zombies, game) {
+        const cx = this.x * CONFIG.gridSize + CONFIG.gridSize / 2;
+        const cy = this.y * CONFIG.gridSize + CONFIG.gridSize / 2;
+        const r2 = this.range * this.range;
+
+        // ataca UM zumbi por vez (o mais avançado no caminho), ignora imunidades
+        if (time - this.lastShot >= this.fireRate) {
+            let target = null;
+            let bestProgress = -1;
+            for (const z of zombies) {
+                if (z.health <= 0) continue;
+                const dx = z.screenX - cx, dy = z.screenY - cy;
+                if (dx * dx + dy * dy > r2) continue;
+                if (z.pathIndex > bestProgress) { bestProgress = z.pathIndex; target = z; }
+            }
+            if (target) {
+                if (ZOMBIE_STATS[target.type]?.freezesTowers && !target.iceArmorBroken) {
+                    target.iceArmorBroken = true;
+                }
+                target.applyDamage(this.damage, game);
+                this.recoil = 6;
+            }
+            this.lastShot = time;
+        }
+
+        // ── ULTIMATE: apenas no nível máximo ──
+        if (!game) return;
+        const maxLevel = getMaxLevel(game.round);
+        if (this.level < maxLevel) return;
+
+        if (this._ultimateTimer === undefined) this._ultimateTimer = 0;
+        this._ultimateTimer -= dt;
+        if (this._ultimateTimer > 0) return;
+        this._ultimateTimer = 45000; // 45 s de cooldown
+
+        // 1) Para TODOS os zombies por 3 s (ignora slowImmune)
+        for (const z of zombies) {
+            z.slowTimer = 3000;
+            z.speed = 0;
+        }
+
+        // 2) Teleporta zombies nos últimos 70% do caminho de volta ao início
+        let teleported = 0;
+        for (const z of zombies) {
+            if (!z.path || z.path.length < 4) continue;
+            if (z.pathIndex >= Math.floor(z.path.length * 0.30)) {
+                z.pathIndex = Math.min(2, z.path.length - 1);
+                const node = z.path[z.pathIndex];
+                z.screenX = node.x * CONFIG.gridSize + CONFIG.gridSize / 2;
+                z.screenY = node.y * CONFIG.gridSize + CONFIG.gridSize / 2;
+                teleported++;
+            }
+        }
+
+        if (game) {
+            game.floatingTexts.push({ x: cx, y: cy - 35, text: '✦ ULTIMATE! ✦', color: '#c39bd3', life: 100 });
+            if (teleported > 0) {
+                game.floatingTexts.push({ x: cx, y: cy - 55, text: `↺ ${teleported} teletransportados`, color: '#9b59b6', life: 100 });
+            }
+        }
+    }
+
     findChainTarget(zombies, fromZ, exclude, range) {
         let best = null;
         let bestDist = Infinity;
@@ -1862,6 +1935,7 @@ class Tower {
             case 'tesla':      this.drawTesla(ctx); break;
             case 'radioactive': this.drawRadioactive(ctx); break;
             case 'laser':      this.drawLaserWall(ctx); break;
+            case 'mago':       this.drawMago(ctx); break;
         }
 
         // brilho dourado se a torre foi fundida com outra igual
@@ -2809,6 +2883,120 @@ class Tower {
             }
         }
     }
+
+    drawMago(ctx) {
+        const t = performance.now() * 0.001;
+        const bob = Math.sin(t * 1.8) * 4; // flutua para cima e para baixo
+
+        // aura mágica pulsante no chão
+        const auraR = 22 + Math.sin(t * 2.5) * 4;
+        const grad = ctx.createRadialGradient(0, 8, 2, 0, 8, auraR);
+        grad.addColorStop(0, 'rgba(180, 80, 255, 0.55)');
+        grad.addColorStop(1, 'rgba(100, 0, 200, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.ellipse(0, 8, auraR, auraR * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+
+        ctx.save();
+        ctx.translate(0, bob);
+
+        // ── orbs elementais orbitando ──
+        const elements = [
+            { color: '#e74c3c', r: 3 },   // fogo
+            { color: '#3498db', r: 3 },   // gelo
+            { color: '#2ecc71', r: 3 },   // veneno
+            { color: '#f1c40f', r: 3 },   // raio
+            { color: '#ecf0f1', r: 3 },   // sagrado
+        ];
+        const orbR = 19;
+        elements.forEach((el, i) => {
+            const angle = t * 1.6 + (i / elements.length) * Math.PI * 2;
+            const ox = Math.cos(angle) * orbR;
+            const oy = Math.sin(angle) * orbR * 0.45;
+            ctx.fillStyle = el.color;
+            ctx.shadowColor = el.color;
+            ctx.shadowBlur = 8;
+            ctx.beginPath(); ctx.arc(ox, oy, el.r, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
+        });
+
+        // ── manto / robe ──
+        ctx.fillStyle = '#4a0080';
+        ctx.strokeStyle = '#9b59b6';
+        ctx.lineWidth = 1.5;
+        // base larga do manto
+        ctx.beginPath();
+        ctx.moveTo(-10, 2);
+        ctx.lineTo(-13, 16);
+        ctx.lineTo(13, 16);
+        ctx.lineTo(10, 2);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+
+        // corpo
+        ctx.fillStyle = '#6c3483';
+        ctx.strokeStyle = '#9b59b6';
+        roundRect(ctx, -8, -10, 16, 14, 3);
+        ctx.fill(); ctx.stroke();
+
+        // braço com cajado
+        ctx.fillStyle = '#6c3483';
+        ctx.fillRect(8, -8, 5, 10);
+        // cajado
+        ctx.strokeStyle = '#8b4513';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(12, -8); ctx.lineTo(14, -24); ctx.stroke();
+        // cristal no topo do cajado
+        const crystalGlow = 0.6 + 0.4 * Math.sin(t * 4);
+        ctx.fillStyle = `rgba(180, 80, 255, ${crystalGlow})`;
+        ctx.strokeStyle = '#e8d5ff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(14, -29); ctx.lineTo(11, -24); ctx.lineTo(17, -24);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+
+        // braço esquerdo
+        ctx.fillStyle = '#6c3483';
+        ctx.fillRect(-13, -8, 5, 8);
+
+        // cabeça
+        ctx.fillStyle = '#f5cba7';
+        ctx.strokeStyle = '#d4a574';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(0, -16, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+        // chapéu de mago
+        ctx.fillStyle = '#4a0080';
+        ctx.strokeStyle = '#9b59b6';
+        ctx.lineWidth = 1.5;
+        // aba
+        ctx.beginPath(); ctx.ellipse(0, -22, 12, 3, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        // cone
+        ctx.beginPath();
+        ctx.moveTo(-7, -22); ctx.lineTo(0, -38); ctx.lineTo(7, -22);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        // estrela no chapéu
+        ctx.fillStyle = '#f1c40f';
+        ctx.font = '7px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('★', 0, -28);
+
+        // olhos
+        ctx.fillStyle = '#9b59b6';
+        ctx.beginPath(); ctx.arc(-3, -17, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(3, -17, 2, 0, Math.PI * 2); ctx.fill();
+
+        ctx.restore();
+
+        // anel de teleporte quando ultimate pronto (timer <= 0)
+        if (this._ultimateTimer !== undefined && this._ultimateTimer <= 0) {
+            const ringR = 26 + Math.sin(t * 6) * 3;
+            ctx.strokeStyle = `rgba(155, 89, 182, ${0.5 + 0.5 * Math.sin(t * 8)})`;
+            ctx.lineWidth = 3;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath(); ctx.arc(0, 4 + bob, ringR, 0, Math.PI * 2); ctx.stroke();
+            ctx.setLineDash([]);
+        }
+    }
+
 }
 
 class Zombie {
@@ -2941,12 +3129,13 @@ class Zombie {
             this.screenY += (dy / dist) * move;
         }
 
-        // zumbi de gelo congela torres ao passar (cavaleiros e parede laser são imunes)
+        // zumbi de gelo congela torres ao passar (cavaleiros, parede laser e mago são imunes)
         if (ZOMBIE_STATS[this.type].freezesTowers && game) {
             const freezeRange = CONFIG.gridSize * 1.2;
             for (const t of game.towers) {
                 if (t.mobile) continue;
                 if (t.type === 'laser') continue;
+                if (t.type === 'mago') continue;
                 const tcx = t.x * CONFIG.gridSize + CONFIG.gridSize / 2;
                 const tcy = t.y * CONFIG.gridSize + CONFIG.gridSize / 2;
                 const d = Math.hypot(this.screenX - tcx, this.screenY - tcy);
@@ -3250,6 +3439,8 @@ class Zombie {
         }
     }
 }
+
+
 
 class Projectile {
     constructor(x, y, target, damage, type) {
