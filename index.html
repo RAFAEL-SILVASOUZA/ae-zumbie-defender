@@ -199,7 +199,18 @@
     </div>
     <audio id="bg-music" src="music.mp3" loop preload="auto"></audio>
     <audio id="boss-music" src="music_master.mp3" loop preload="auto"></audio>
-    <script src="game.js"></script>
+    
+    <!-- Modular structure -->
+    <script src="src/config/config.js"></script>
+    <script src="src/constants/towerStats.js"></script>
+    <script src="src/constants/zombieStats.js"></script>
+    <script src="src/entities/Projectile.js"></script>
+    <script src="src/entities/Zombie.js"></script>
+    <script src="src/entities/Tower.js"></script>
+    <script src="src/engine/drawing.js"></script>
+    <script src="src/engine/layout.js"></script>
+    <script src="src/engine/Game.js"></script>
+    <script src="src/main.js"></script>
 </body>
 
 </html>
