@@ -3,7 +3,9 @@
 
 document.addEventListener('DOMContentLoaded', () => {
     configureLayout();
-    new Game();
+    const game = new Game();
+    // Antes da partida, redimensiona o grid; depois, só reescala o canvas.
+    const fitCanvas = () => game.relayout();
     renderShopThumbnails();
     renderHelpContent();
     setInterval(renderShopThumbnails, 80);

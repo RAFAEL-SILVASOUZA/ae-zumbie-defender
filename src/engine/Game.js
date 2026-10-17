@@ -232,10 +232,31 @@ class Game {
     }
 
     initGrid() {
+        this.grid = [];
         for (let x = 0; x < CONFIG.cols; x++) {
             this.grid[x] = [];
             for (let y = 0; y < CONFIG.rows; y++) this.grid[x][y] = 0;
         }
+    }
+
+    // Recalcula cols/rows a partir do tamanho atual da tela. No PWA o viewport
+    // só se estabiliza depois do load, então o grid calculado no início pode
+    // ter a proporção errada (campo ocupando só parte da tela). Só é seguro
+    // antes da partida começar, enquanto não há torres nem zumbis no mapa.
+    relayout() {
+        if (this.started) { fitCanvas(); return; }
+        const prevCols = CONFIG.cols, prevRows = CONFIG.rows;
+        configureLayout();
+        if (CONFIG.cols !== prevCols || CONFIG.rows !== prevRows) {
+            this.canvas.width = this.bgCanvas.width = CONFIG.cols * CONFIG.gridSize;
+            this.canvas.height = this.bgCanvas.height = CONFIG.rows * CONFIG.gridSize;
+            this.start = { x: 0, y: Math.floor(CONFIG.rows / 2) };
+            this.end   = { x: CONFIG.cols - 1, y: Math.floor(CONFIG.rows / 2) };
+            this.initGrid();
+            this.renderStaticBackground();
+            this.updatePath();
+        }
+        fitCanvas();
     }
 
     initEventListeners() {
@@ -453,6 +474,8 @@ class Game {
         // ▶ Start button → countdown → game
         document.getElementById('btn-start').addEventListener('click', () => {
             this.primeAudio();
+            this.relayout();
+            this.started = true;
             startScreen.classList.add('fade-out');
             setTimeout(() => { startScreen.style.display = 'none'; }, 800);
             this.doCountdown();
