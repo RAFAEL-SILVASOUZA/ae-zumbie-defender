@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>AE Zombie Defender</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Patrick+Hand&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="game-container">
+        <div id="start-screen">
+            <div class="start-content">
+                <h1 class="start-title">ZOMBIE DEFENDER</h1>
+                <div class="start-buttons">
+                    <button id="btn-start" class="start-btn" title="Jogar">
+                        <span class="btn-icon">▶</span>
+                    </button>
+                    <button id="btn-scores" class="start-btn" title="Recordes">
+                        <span class="btn-icon">🏆</span>
+                    </button>
+                    <button id="btn-help" class="start-btn" title="Como jogar">
+                        <span class="btn-icon">?</span>
+                    </button>
+                </div>
+                <div class="version-tag">v1.0.0</div>
+            </div>
+        </div>
+
+        <div id="countdown-overlay">
+            <div id="countdown" class="countdown-number">3</div>
+        </div>
+
+        <div id="help-overlay">
+            <div class="help-full">
+                <div class="help-header">
+                    <h2>Guia de Referência</h2>
+                    <button id="help-close" class="help-close-btn">✕</button>
+                </div>
+                <div class="help-tabs">
+                    <button class="help-tab active" data-tab="monsters">Monstros</button>
+                    <button class="help-tab" data-tab="weapons">Armas</button>
+                    <button class="help-tab" data-tab="strategy">Estratégia</button>
+                    <button class="help-tab" data-tab="howto">Como Jogar</button>
+                </div>
+                <div class="help-tab-content active" data-content="monsters">
+                    <div class="help-scroll">
+                        <div class="help-grid" id="help-monsters-grid"></div>
+                    </div>
+                </div>
+                <div class="help-tab-content" data-content="weapons">
+                    <div class="help-scroll">
+                        <div class="help-grid" id="help-weapons-grid"></div>
+                    </div>
+                </div>
+                <div class="help-tab-content" data-content="strategy">
+                    <div class="help-scroll">
+                        <div id="help-strategy-content"></div>
+                    </div>
+                </div>
+                <div class="help-tab-content" data-content="howto">
+                    <div class="help-scroll">
+                        <div class="howto-panel">
+                            <div class="howto-item">
+                                <span class="howto-icon">🏰</span>
+                                <span>Clique numa torre na loja e depois no campo para colocá-la.</span>
+                            </div>
+                            <div class="howto-item">
+                                <span class="howto-icon">⬆️</span>
+                                <span>Clique numa torre colocada para Melhorar (até 3×) ou Vender (50%).</span>
+                            </div>
+                            <div class="howto-item">
+                                <span class="howto-icon">🧟</span>
+                                <span>Impedir os zumbis de atravessarem o mapa!</span>
+                            </div>
+                            <div class="howto-item">
+                                <span class="howto-icon">⏸️</span>
+                                <span>Use os botões de velocidade no topo para pausar ou acelerar.</span>
+                            </div>
+                            <div class="howto-item">
+                                <span class="howto-icon">🖱️</span>
+                                <span>ESC fecha menus e seleções.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="version-tag">v1.0.0</div>
+            </div>
+        </div>
+
+        <div id="hud">
+            <div class="stat money">💰 <span id="money">50</span></div>
+            <div class="stat score">🏆 <span id="score">0</span></div>
+            <div class="stat round-display">Round <span id="round">1</span></div>
+            <div id="speed-control">
+                <button data-speed="0" title="Pausar">❚❚</button>
+                <button data-speed="1" class="active" title="Velocidade normal">1x</button>
+                <button data-speed="2" title="Acelerar 2x">2x</button>
+                <button data-speed="3" title="Acelerar 3x">3x</button>
+                <button data-speed="4" title="Acelerar 4x">4x</button>
+                <button data-speed="100" title="Acelerar 100x">100x</button>
+            </div>
+            <div class="stat health">❤️ <span id="health">20</span></div>
+            <button id="upgrade-all-btn" title="Evoluir todas as torres">⚡</button>
+            <button id="mute-btn" title="Mutar / Ativar música">🔊</button>
+            <button id="fullscreen-btn" title="Tela cheia">⛶</button>
+            <button id="hamburger-btn" title="Menu">☰</button>
+            <div id="hamburger-menu">
+                <div class="hm-item" id="hm-restart">🔄 Reiniciar</div>
+                <div class="hm-item" id="hm-scores">🏆 Recordes</div>
+                <div class="hm-item" id="hm-help">📖 Ajuda</div>
+            </div>
+        </div>
+
+        <div class="canvas-frame">
+            <div class="canvas-wrap">
+                <canvas id="gameCanvas"></canvas>
+                <div id="round-banner"></div>
+                <div id="tower-menu"></div>
+                <div id="game-over"></div>
+                <div id="high-scores-overlay">
+                    <div class="hs-panel">
+                        <h2>🏆 Recordes</h2>
+                        <div id="hs-list"></div>
+                        <button id="hs-clear">Limpar recordes</button>
+                        <button id="hs-close">Fechar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="shop">
+            <div class="shop-item" data-type="spike" title="Espinhos - dano de contato (não atinge voadores)">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$5</span>
+            </div>
+            <div class="shop-item" data-type="pistol" title="Pistola - tiro básico">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$10</span>
+            </div>
+            <div class="shop-item" data-type="machinegun" title="Metralhadora - tiro rápido">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$30</span>
+            </div>
+            <div class="shop-item" data-type="poison" title="Veneno - desacelera e envenena">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$40</span>
+            </div>
+            <div class="shop-item" data-type="radar" title="Radar - alcance longo, dano alto">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$100</span>
+            </div>
+            <div class="shop-item" data-type="robot" title="Robô - automatizado, alto DPS">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$120</span>
+            </div>
+            <div class="shop-item" data-type="rocket" title="Lança-Foguetes - dano em área">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$150</span>
+            </div>
+            <div class="shop-item" data-type="tesla"
+                title="Tesla - raios elétricos que saltam entre inimigos (mais forte)">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$200</span>
+            </div>
+            <div class="shop-item" data-type="radioactive"
+                title="Radioativa - dano em área circular ao redor (não direcional)">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$250</span>
+            </div>
+            <div class="shop-item" data-type="knight"
+                title="Cavaleiro - unidade móvel que persegue zumbis, ataque holy ignora imunidades, cleave em área (mais forte do jogo)">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$500</span>
+            </div>
+            <div class="shop-item" data-type="drone"
+                title="Drone - não causa dano: captura um zumbi por vez e o leva de volta ao início (não pega chefes)">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$750</span>
+            </div>
+            <div class="shop-item" data-type="laser" style="display:none"
+                title="Parede Laser - queima todos os zumbis que atravessam com 200 de dano (energia) · último upgrade muda para plasma">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$1000</span>
+            </div>
+            <div class="shop-item" data-type="mago" style="display:none"
+                title="Mago - flutua e ataca TODOS os zumbis no alcance com todos os elementos (ignora imunidades) · não é congelado · no nível máximo: para todos os zumbis e teletransporta os avançados de volta ao início">
+                <canvas class="icon" width="50" height="50"></canvas>
+                <span class="cost">$50</span>
+            </div>
+        </div>
+
+        <div id="hint">PC: clique numa torre da loja e depois no campo · Celular: arraste a torre da loja até o campo · Toque/clique numa torre colocada para Melhorar (até 3×) ou Vender (50%) · ESC fecha</div>
+    </div>
+    <audio id="bg-music" src="music.mp3" loop preload="auto"></audio>
+    <audio id="boss-music" src="music_master.mp3" loop preload="auto"></audio>
+    
+    <!-- Modular structure -->
+    <script src="src/config/config.js"></script>
+    <script src="src/constants/towerStats.js"></script>
+    <script src="src/constants/zombieStats.js"></script>
+    <script src="src/entities/Projectile.js"></script>
+    <script src="src/entities/Zombie.js"></script>
+    <script src="src/entities/Tower.js"></script>
+    <script src="src/engine/drawing.js"></script>
+    <script src="src/engine/layout.js"></script>
+    <script src="src/engine/Game.js"></script>
+    <script src="src/main.js"></script>
+</body>
+
+</html>
