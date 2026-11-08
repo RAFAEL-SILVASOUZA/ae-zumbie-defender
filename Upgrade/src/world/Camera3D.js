@@ -1,0 +1,121 @@
+/**
+ * Camera orbitável com enquadramento automático do tabuleiro.
+ * - No desktop: dá para girar arrastando com o botão direito / Alt+arrastar
+ *   e aproximar com o scroll, sempre sem perder o foco no campo.
+ * - No celular: por padrão a câmera fica fixa e enquadra tudo, para não
+ *   conflitar com o toque de posicionar torres (que é o gesto principal).
+ * O enquadramento ("fit") é recalculado em todo relayout para caber o mapa
+ * inteiro, tanto em retrato (celular) quanto em paisagem (desktop).
+ */
+class Camera3D {
+    constructor(camera, dom) {
+        this.camera = camera;
+        this.dom = dom;
+
+        // ângulos orbitais (radianos)
+        this.theta = -Math.PI / 2;   // azimute: encara o campo de frente
+        this.phi = 0.62;             // inclinação a partir do topo
+        this.minPhi = 0.28;
+        this.maxPhi = 1.15;
+
+        this.radius = 16;            // ajustado por fit()
+        this.fitRadius = 16;
+        this.minRadiusFactor = 0.6;
+        this.maxRadiusFactor = 1.7;
+
+        this.target = new THREE.Vector3(0, 0, 0);
+        this._dragging = false;
+        this._px = 0; this._py = 0;
+
+        this._bind();
+    }
+
+    // Enquadra todo o tabuleiro (largura/altura em unidades 3D) de forma EXATA,
+    // testando os 4 cantos do retângulo no plano do chão. Garante que o mapa
+    // preencha a área disponível em qualquer proporção de tela.
+    fit(w, h) {
+        const halfW = w / 2, halfH = h / 2;
+        const aspect = this.camera.aspect || 1;
+        const fov = THREE.MathUtils.degToRad(this.camera.fov);
+        const tanF = Math.tan(fov / 2);
+        const margin = 1.04; // folga mínima: o mapa fica grande
+
+        const sinP = Math.sin(this.phi), cosP = Math.cos(this.phi);
+        // base da câmera
+        const u = new THREE.Vector3(sinP * Math.cos(this.theta), cosP, sinP * Math.sin(this.theta)); // direção (origem->câmera)
+        const f = u.clone().negate();                       // forward (câmera->origem)
+        const up0 = new THREE.Vector3(0, 1, 0);
+        const right = new THREE.Vector3().crossVectors(f, up0).normalize();
+        const up = new THREE.Vector3().crossVectors(right, f).normalize();
+
+        const corners = [
+            [-halfW, -halfH], [halfW, -halfH], [halfW, halfH], [-halfW, halfH]
+        ];
+        let rNeed = 0;
+        for (const [cx, cz] of corners) {
+            const c = new THREE.Vector3(cx, 0, cz);
+            const alongC = c.dot(u);                 // projeção do canto na direção da câmera
+            const latX = Math.abs(c.dot(right));
+            const latY = Math.abs(c.dot(up));
+            // precisa de r >= along + lateral/(tan*axis)
+            const need = alongC + Math.max(latX / (tanF * aspect), latY / tanF);
+            if (need > rNeed) rNeed = need;
+        }
+        this.fitRadius = rNeed * margin;
+        if (this.userZoom == null) this.radius = this.fitRadius;
+        else this.radius = this.fitRadius * this.userZoom;
+        this.apply();
+    }
+
+    apply() {
+        const r = THREE.MathUtils.clamp(this.radius,
+            this.fitRadius * this.minRadiusFactor,
+            this.fitRadius * this.maxRadiusFactor);
+        const sinP = Math.sin(this.phi), cosP = Math.cos(this.phi);
+        this.camera.position.set(
+            this.target.x + r * sinP * Math.cos(this.theta),
+            this.target.y + r * cosP,
+            this.target.z + r * sinP * Math.sin(this.theta)
+        );
+        this.camera.lookAt(this.target);
+    }
+
+    _bind() {
+        const d = this.dom;
+        d.addEventListener('contextmenu', e => e.preventDefault());
+
+        d.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            this.userZoom = THREE.MathUtils.clamp(
+                (this.userZoom || 1) * (e.deltaY > 0 ? 1.1 : 0.9),
+                this.minRadiusFactor, this.maxRadiusFactor);
+            this.radius = this.fitRadius * this.userZoom;
+            this.apply();
+        }, { passive: false });
+
+        d.addEventListener('pointerdown', (e) => {
+            // só orbita com botão direito ou com a tecla Alt (não conflita
+            // com o toque/esquerdo usado para posicionar e selecionar)
+            if (e.button === 2 || e.altKey) {
+                this._dragging = true;
+                this._px = e.clientX; this._py = e.clientY;
+                d.setPointerCapture && d.setPointerCapture(e.pointerId);
+            }
+        });
+        d.addEventListener('pointermove', (e) => {
+            if (!this._dragging) return;
+            const dx = e.clientX - this._px, dy = e.clientY - this._py;
+            this._px = e.clientX; this._py = e.clientY;
+            this.theta += dx * 0.005;
+            this.phi = THREE.MathUtils.clamp(this.phi - dy * 0.005, this.minPhi, this.maxPhi);
+            // re-fit respeita a nova inclinação
+            const world = window.World;
+            if (world) this.fit(world.boardW, world.boardH);
+            this.apply();
+        });
+        const stop = () => { this._dragging = false; };
+        d.addEventListener('pointerup', stop);
+        d.addEventListener('pointercancel', stop);
+        d.addEventListener('pointerleave', stop);
+    }
+}
