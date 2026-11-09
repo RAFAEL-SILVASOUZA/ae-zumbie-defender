@@ -8,15 +8,35 @@
  * inteiro, tanto em retrato (celular) quanto em paisagem (desktop).
  */
 class Camera3D {
+    // Dispositivo de toque (celular/tablet): usa ponteiro grosseiro ou
+    // múltiplos pontos de toque, mesmo tamanho de tela.
+    static isTouchDevice() {
+        if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
+        return (navigator.maxTouchPoints || 0) > 0;
+    }
+
     constructor(camera, dom) {
         this.camera = camera;
         this.dom = dom;
 
-        // ângulos orbitais (radianos)
+        // ângulos orbitais (radianos). O padrão é desktop; no celular aplica-
+        // se um perfil mais "de cima" (phi menor) para as células ficarem
+        // mais quadradas e fáceis de tocar.
         this.theta = -Math.PI / 2;   // azimute: encara o campo de frente
         this.phi = 0.62;             // inclinação a partir do topo
         this.minPhi = 0.28;
         this.maxPhi = 1.15;
+
+        this.isTouch = Camera3D.isTouchDevice();
+        if (this.isTouch) {
+            // Em celular paisagem, um ângulo um pouco mais de cima que o
+            // desktop mantém as células tocáveis sem achatar o cenário. O
+            // campo já não vira faixa achatada (ver configureLayout), então
+            // este phi é suficiente e agrada mais que o top-down puro.
+            this.phi = 0.60;
+            this.minPhi = 0.30;
+            this.maxPhi = 1.10;
+        }
 
         this.radius = 16;            // ajustado por fit()
         this.fitRadius = 16;

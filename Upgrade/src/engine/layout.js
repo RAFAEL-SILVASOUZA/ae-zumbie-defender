@@ -24,7 +24,13 @@ function configureLayout() {
     const frameAspect = frameW / frameH;
 
     const rows = Math.max(8, Math.min(12, Math.round(frameH / 55)));
-    const cols = Math.max(12, Math.min(28, Math.round(rows * frameAspect)));
+    // Limitamos a proporção do CAMPO (cols/rows) para o tabuleiro nunca virar
+    // uma faixa achatada em telas muito largas (celular em paisagem). Um campo
+    // mais "quadrado", como no desktop, mantém a profundidade e evita a
+    // impressão de cenário deitado. Se sobrar largura, a câmera centraliza.
+    const maxFieldAspect = 1.85;
+    const effAspect = Math.min(frameAspect, maxFieldAspect);
+    const cols = Math.max(12, Math.min(28, Math.round(rows * effAspect)));
 
     CONFIG.cols = cols;
     CONFIG.rows = rows;
