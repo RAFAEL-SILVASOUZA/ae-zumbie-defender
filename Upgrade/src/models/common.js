@@ -63,6 +63,23 @@ const MatFactory = {
         m = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
         this._cache.set(key, m);
         return m;
+    },
+    // TEXTURA de bolha suave (para usar como map de SpriteMaterial).
+    // Branca: a cor vem do material (material.color). Memoizada.
+    dotTex() {
+        const key = 'd:white';
+        let t = this._cache.get(key);
+        if (t) return t;
+        const c = document.createElement('canvas'); c.width = c.height = 64;
+        const g = c.getContext('2d');
+        const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+        grd.addColorStop(0, 'rgba(255,255,255,1)');
+        grd.addColorStop(0.35, 'rgba(255,255,255,0.85)');
+        grd.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = grd; g.beginPath(); g.arc(32, 32, 32, 0, Math.PI * 2); g.fill();
+        t = new THREE.CanvasTexture(c);
+        this._cache.set(key, t);
+        return t;
     }
 };
 
@@ -82,8 +99,24 @@ const GeomFactory = {
     ring(ri, ro, seg = 24) { return this._get(`ring:${ri},${ro}`, () => new THREE.RingGeometry(ri, ro, seg)); },
     plane(w, h) { return this._get(`plane:${w},${h}`, () => new THREE.PlaneGeometry(w, h)); },
     icosa(r, d = 0) { return this._get(`ico:${r},${d}`, () => new THREE.IcosahedronGeometry(r, d)); },
-    octa(r) { return this._get(`octa:${r}`, () => new THREE.OctahedronGeometry(r)); }
+    octa(r) { return this._get(`octa:${r}`, () => new THREE.OctahedronGeometry(r)); },
+    // cápsula com pivô NO TOPO (quadril/ombro): origem no centro da tampa
+    // superior, o corpo desce. Ideal para membros que giram na articulação.
+    capTop(r, len, wseg = 7, cseg = 3) {
+        return this._get(`captop:${r},${len},${wseg},${cseg}`, () => {
+            const g = new THREE.CapsuleGeometry(r, len, cseg, wseg);
+            g.translate(0, -(len / 2 + r), 0);
+            return g;
+        });
+    }
 };
+
+// clareia (f > 0) ou escurece (f < 0) uma cor hex, devolvendo hex
+function shade(hex, f) {
+    const c = new THREE.Color(hex);
+    c.lerp(f >= 0 ? new THREE.Color('#ffffff') : new THREE.Color('#000000'), Math.min(1, Math.abs(f)));
+    return '#' + c.getHexString();
+}
 
 // helpers de montagem
 function mesh(geo, mat) {

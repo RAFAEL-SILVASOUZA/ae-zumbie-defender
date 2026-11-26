@@ -96,6 +96,27 @@ class Tower {
     _animate(dt, time) {
         const p = this.parts;
         if (!p) return;
+        // clarão de disparo
+        if (p.flash) {
+            const on = this.flashTimer > 0;
+            p.flash.visible = on;
+            if (on) {
+                const k = 0.7 + Math.random() * 0.7;
+                p.flash.scale.set(0.42 * k, 0.42 * k, 1);
+            }
+        }
+        // cavaleiro: trote (pernas alternando) + bob do corpo
+        if (this.type === 'knight') {
+            const gp = this.gallopPhase || 0;
+            if (p._legs) {
+                for (let i = 0; i < p._legs.length; i++) {
+                    const l = p._legs[i];
+                    const off = (i % 2) * Math.PI;
+                    l.rotation.x = Math.sin(gp * 30 + off) * 0.55;
+                }
+            }
+            this.model.position.y = Math.abs(Math.sin(gp * 30)) * 0.045;
+        }
         if (p.disc) p.disc.rotation.y += dt * 0.003;
         if (p.orbs && p._orbList) {
             const t = time * 0.0016;
@@ -172,6 +193,7 @@ class Tower {
     // ---------- update (lógica idêntica; no fim atualiza o modelo) ----------
     update(time, dt, zombies, projectiles, game) {
         this.recoil = Math.max(0, this.recoil - 0.5);
+        if (this.flashTimer > 0) this.flashTimer -= dt * 0.06;
 
         if (this.frozenUntil > time) {
             if (!this._frozenVis) this.setFrozenVisual(true);
@@ -222,6 +244,8 @@ class Tower {
                 }
                 this.lastShot = time;
                 this.recoil = 6;
+                this.flashTimer = 90;
+                if (window.SFX) SFX.play(this.type === 'rocket' || this.type === 'radar' ? 'bigshot' : 'shot');
             }
         }
         this._updateModelTransform();
@@ -374,6 +398,7 @@ class Tower {
                 this.lastShot = time;
                 this.swingTime = 220;
                 this.recoil = 6;
+                if (window.SFX) SFX.play('splat');
             }
         } else if (dist > 1) {
             this.angle = Math.atan2(dy, dx);
@@ -420,6 +445,7 @@ class Tower {
         bolt.dead = false;
         bolt.lifeMs = 0;
         projectiles.push(bolt);
+        if (window.SFX) SFX.play('zap');
     }
 
     fireRadioactive(cx, cy, zombies, projectiles, game) {
@@ -442,6 +468,8 @@ class Tower {
         bolt.lifeMs = 0;
         bolt.radioactiveDisk = { r: radius, maxLife: 900 };
         projectiles.push(bolt);
+        if (window.SFX) SFX.play('zap');
+        if (window.FX && FX._layer) FX.ring(Coords.px(cx), 0.1, Coords.py(cy), '#f5d900', Coords.len(radius) * 1.05, 450);
     }
 
     updateLaserWall(time, zombies, game) {
@@ -468,7 +496,10 @@ class Tower {
             }
             this.laserHits.set(z, time);
         }
-        if (hitAny) this.recoil = 6;
+        if (hitAny) {
+            this.recoil = 6;
+            if (window.SFX) SFX.play('laser');
+        }
         for (const z of this.laserHits.keys()) {
             if (z.health <= 0 || !zombies.includes(z)) this.laserHits.delete(z);
         }
@@ -527,7 +558,10 @@ class Tower {
                 if (ZOMBIE_STATS[target.type]?.freezesTowers && !target.iceArmorBroken) target.iceArmorBroken = true;
                 target.applyDamage(this.damage, game);
                 this.recoil = 6;
-                if (this.parts.orb) { /* flash */ }
+                if (window.SFX) SFX.play('magic');
+                if (window.FX && FX._layer) FX.burst(Coords.px(target.screenX), 0.5, Coords.py(target.screenY), {
+                    color: '#b050ff', count: 7, size: 0.1, speed: 0.3, up: 0.5, gravity: -0.3, life: 400
+                });
             }
             this.lastShot = time;
         }

@@ -113,6 +113,53 @@ class Camera3D {
             this.apply();
         }, { passive: false });
 
+        // ---------- pinch-zoom + órbita com 2 dedos (celular/tablet) ----------
+        this._pointers = new Map();
+        this._pinch = null;
+        d.addEventListener('pointerdown', (e) => {
+            this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (this._pointers.size >= 2) {
+                const pts = [...this._pointers.values()];
+                this._pinch = {
+                    dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y),
+                    midX: (pts[0].x + pts[1].x) / 2,
+                    midY: (pts[0].y + pts[1].y) / 2,
+                    zoom0: this.userZoom
+                };
+                this._dragging = false; // solta a órbita de mouse
+            }
+        });
+        d.addEventListener('pointermove', (e) => {
+            if (!this._pointers.has(e.pointerId)) return;
+            this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (this._pointers.size < 2 || !this._pinch) return;
+            const pts = [...this._pointers.values()];
+            const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+            const midX = (pts[0].x + pts[1].x) / 2;
+            const midY = (pts[0].y + pts[1].y) / 2;
+            // zoom proporcional à variação da distância entre os dedos
+            const k = this._pinch.dist > 0 ? dist / this._pinch.dist : 1;
+            this.userZoom = THREE.MathUtils.clamp(this._pinch.zoom0 / k,
+                this.minRadiusFactor, this.maxRadiusFactor);
+            this.radius = this.fitRadius * this.userZoom;
+            // órbita com o movimento do ponto médio
+            const dx = midX - this._pinch.midX, dy = midY - this._pinch.midY;
+            this._pinch.midX = midX; this._pinch.midY = midY;
+            this.theta += dx * 0.004;
+            this.phi = THREE.MathUtils.clamp(this.phi - dy * 0.004, this.minPhi, this.maxPhi);
+            const world = window.World;
+            if (world) this.fit(world.boardW, world.boardH);
+            this.apply();
+            e.preventDefault();
+        });
+        const endPinch = (e) => {
+            this._pointers.delete(e.pointerId);
+            if (this._pointers.size < 2) this._pinch = null;
+        };
+        d.addEventListener('pointerup', endPinch);
+        d.addEventListener('pointercancel', endPinch);
+        d.addEventListener('pointerleave', endPinch);
+
         d.addEventListener('pointerdown', (e) => {
             // só orbita com botão direito ou com a tecla Alt (não conflita
             // com o toque/esquerdo usado para posicionar e selecionar)

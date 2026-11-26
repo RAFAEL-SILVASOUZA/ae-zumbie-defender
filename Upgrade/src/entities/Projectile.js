@@ -72,10 +72,45 @@ class Projectile {
     _buildChain() {
         if (this.lineGeo) return;
         this.lineGeo = new THREE.BufferGeometry();
-        this.lineMat = new THREE.LineBasicMaterial({ color: 0x7ec8ff, transparent: true, opacity: 1 });
+        this.lineMat = new THREE.LineBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 1 });
         this.obj = new THREE.Line(this.lineGeo, this.lineMat);
         this.obj.frustumCulled = false;
         this._world().add(this.obj);
+    }
+    // raio em zigue-zague: subdivide cada trecho da cadeia e sacode os pontos
+    // intermediários a cada frame (raio elétrico "vivo")
+    _updateChain() {
+        const pts = this.chainPoints;
+        const arr = [];
+        const perpJitter = () => (Math.random() - 0.5) * 0.14;
+        for (let i = 0; i < pts.length - 1; i++) {
+            const a = pts[i], b = pts[i + 1];
+            const ax = Coords.px(a.x), az = Coords.py(a.y);
+            const bx = Coords.px(b.x), bz = Coords.py(b.y);
+            const segs = 5;
+            for (let s = 0; s <= segs; s++) {
+                const t = s / segs;
+                const x = ax + (bx - ax) * t;
+                const z = az + (bz - az) * t;
+                const y = 0.5 + Math.sin(t * Math.PI) * 0.06;
+                if (s > 0 && s < segs) {
+                    arr.push(x + perpJitter(), y + perpJitter() * 0.5, z + perpJitter());
+                } else {
+                    arr.push(x, y, z);
+                }
+            }
+        }
+        this.lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+        this.lineGeo.attributes.position.needsUpdate = true;
+        const a = 1 - (this.lifeMs / this.lifetimeMs);
+        this.lineMat.opacity = Math.max(0, a);
+        // clarão nos pontos de impacto
+        if (!this._chainFlashed && window.FX && FX._layer) {
+            this._chainFlashed = true;
+            for (let i = 1; i < pts.length; i++) {
+                FX.flash(Coords.px(pts[i].x), 0.55, Coords.py(pts[i].y), '#aee8ff', 0.4, 140);
+            }
+        }
     }
     _buildDisk() {
         if (this.obj) return;
@@ -131,6 +166,19 @@ class Projectile {
         }
         if (this.trail) {
             this.trail.position.set(Coords.px(this.x), 0.45, Coords.py(this.y));
+            // rastro de fumaça
+            this.trailEmit = (this.trailEmit || 0) + dt;
+            if (this.trailEmit > 70 && window.FX && FX._layer) {
+                this.trailEmit = 0;
+                FX.burst(Coords.px(this.x), 0.45, Coords.py(this.y), {
+                    color: '#b0b0b0', count: 1, size: 0.09, speed: 0.03, up: 0.1,
+                    gravity: -0.2, life: 380, blending: 'normal'
+                });
+                FX.burst(Coords.px(this.x), 0.45, Coords.py(this.y), {
+                    color: '#ff9a3c', count: 1, size: 0.07, speed: 0.03, up: 0.1,
+                    gravity: -0.4, life: 150
+                });
+            }
         }
     }
 
@@ -155,6 +203,13 @@ class Projectile {
             this.trail = null;
             this.obj = null;
             this._buildExplosion();
+            if (window.SFX) SFX.play('boom');
+            const wx = Coords.px(this.x), wz = Coords.py(this.y);
+            if (window.FX && FX._layer) {
+                FX.ring(wx, 0.08, wz, '#ff9a3c', Coords.len(radius) * 1.1, 420);
+                FX.burst(wx, 0.45, wz, { color: '#ff7a1c', count: 10, size: 0.14, speed: 0.6, up: 0.9, gravity: 2.0, life: 380 });
+                FX.burst(wx, 0.5, wz, { color: '#8a8a8a', count: 7, size: 0.18, speed: 0.3, up: 0.5, gravity: 0.4, life: 700, blending: 'normal' });
+            }
         } else if (this.type === 'poison') {
             if (ZOMBIE_STATS[this.target.type]?.freezesTowers && !this.target.iceArmorBroken) {
                 this.target.iceArmorBroken = true;
@@ -175,8 +230,13 @@ class Projectile {
                 if (game) game.floatingTexts.push({ x: this.target.screenX, y: this.target.screenY - 18, text: 'imune!', color: '#aaa', life: 40 });
             } else {
                 this.target.applyDamage(this.damage, game);
+                if (window.FX && FX._layer) {
+                    const wx = Coords.px(this.target.screenX), wz = Coords.py(this.target.screenY);
+                    FX.burst(wx, 0.45, wz, { color: this._color(), count: 4, size: 0.06, speed: 0.3, up: 0.4, gravity: 1.8, life: 260 });
+                }
             }
             this.dead = true;
+            if (window.SFX) SFX.play('splat');
         }
     }
 

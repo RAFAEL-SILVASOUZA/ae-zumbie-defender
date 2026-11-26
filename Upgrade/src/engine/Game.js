@@ -13,6 +13,7 @@ class Game {
         this.canvas = document.getElementById('gameCanvas');
         this.world = new World3D(this.canvas);
         this.camera3d = new Camera3D(this.world.camera, this.canvas);
+        FX.init(this.world.fxLayer);
         window.game = this;
 
         this.money = CONFIG.startMoney;
@@ -118,6 +119,7 @@ class Game {
         this.muted = localStorage.getItem('zombieDefenderMuted') === '1';
         this.bgMusic.muted = this.muted;
         this.bossMusic.muted = this.muted;
+        if (window.SFX) SFX.setMuted(this.muted);
         this.musicEnabled = false;
         this.currentTrack = null;
         const muteBtn = document.getElementById('mute-btn');
@@ -130,6 +132,7 @@ class Game {
             this.muted = !this.muted;
             this.bgMusic.muted = this.muted;
             this.bossMusic.muted = this.muted;
+            if (window.SFX) SFX.setMuted(this.muted);
             localStorage.setItem('zombieDefenderMuted', this.muted ? '1' : '0');
             refreshMuteBtn();
         });
@@ -173,6 +176,7 @@ class Game {
     }
 
     primeAudio() {
+        if (window.SFX) SFX.unlock();
         if (this._audioPrimed) return;
         this._audioPrimed = true;
         const prime = (a) => {
@@ -501,6 +505,7 @@ class Game {
         this.updatePath();
         for (const z of this.zombies) z.recalcPath(this);
         this.updateHUD();
+        if (window.SFX) SFX.play('build');
     }
 
     mergeTower(tower, type) {
@@ -538,6 +543,7 @@ class Game {
         });
         this.hideTowerMenu();
         this.updateHUD();
+        if (window.SFX) SFX.play('sell');
     }
 
     upgradeTower(tower) {
@@ -555,6 +561,7 @@ class Game {
         });
         this.renderTowerMenu();
         this.updateHUD();
+        if (window.SFX) SFX.play('upgrade');
     }
 
     hyperTower(tower) {
@@ -572,6 +579,7 @@ class Game {
         });
         this.renderTowerMenu();
         this.updateHUD();
+        if (window.SFX) SFX.play('upgrade');
     }
 
     upgradeAllTowers() {
@@ -766,6 +774,7 @@ class Game {
         else this.lastSpawnTime = time - this.spawnInterval;
         this.showRoundBanner();
         this.updateHUD();
+        if (window.SFX) SFX.play('round');
     }
     showRoundBanner() {
         const el = document.getElementById('round-banner');
@@ -845,6 +854,7 @@ class Game {
         this.score += mh;
         this.floatingTexts.push({ x: z.screenX, y: z.screenY, text: `+$${reward}`, color: '#5a4010', life: 60 });
         this.updateHUD();
+        if (window.SFX) SFX.play('coin');
     }
     handleZombieReachedEnd(z) {
         const damage = ZOMBIE_STATS[z.type].isBoss ? 5 : 1;
@@ -902,7 +912,8 @@ class Game {
                 const z = this.zombies[i];
                 z.update(dt, this);
                 if (z.reachedEnd) { this.handleZombieReachedEnd(z); z.dispose(); this.zombies.splice(i, 1); }
-                else if (z.health <= 0) { this.handleZombieKilled(z); z.dispose(); this.zombies.splice(i, 1); }
+                else if (z.health <= 0 && !z.dying) { this.handleZombieKilled(z); z.die(); }
+                else if (z.dying && z.deathTimer >= 450) { z.dispose(); this.zombies.splice(i, 1); }
             }
 
             for (let i = this.projectiles.length - 1; i >= 0; i--) {
@@ -917,6 +928,7 @@ class Game {
         this.drawHover();
         this.drawFloating();
         this.updatePauseOverlay();
+        FX.update(realDt);
 
         this.world.render();
         requestAnimationFrame(this.loop);

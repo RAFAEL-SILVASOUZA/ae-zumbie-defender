@@ -69,8 +69,11 @@ class World3D {
         this.boardW = cols * gs * CONFIG.worldScale;
         this.boardH = rows * gs * CONFIG.worldScale;
 
-        // base de "papel" levemente elevada com borda (efeito de tabuleiro)
-        const padMat = MatFactory.mat('#e8d5a8', { flatShading: false });
+        // base de "papel" levemente elevada com borda (efeito de tabuleiro),
+        // com microtextura (ruído + pontinhos) para não ficar chapado
+        const gtex = World3D._groundTex();
+        gtex.repeat.set(this.boardW / 4, this.boardH / 4);
+        const padMat = new THREE.MeshLambertMaterial({ color: new THREE.Color('#e8d5a8'), map: gtex });
         const pad = mesh(GeomFactory.plane(this.boardW, this.boardH), padMat);
         pad.rotation.x = -Math.PI / 2;
         pad.position.y = 0;
@@ -106,6 +109,94 @@ class World3D {
         // marcador do spawn e do fim
         this._addPortal(Coords.cellCX(0), Coords.cellCY(Math.floor(rows / 2)), '#4a7a20', 'spawn');
         this._addPortal(Coords.cellCX(cols - 1), Coords.cellCY(Math.floor(rows / 2)), '#8b1a1a', 'end');
+
+        // vegetação/pedras decorativas ao redor do tabuleiro
+        this._buildScatter();
+    }
+
+    // microtextura do chão (ruído + pontinhos de grade), memoizada
+    static _groundTex() {
+        if (World3D.__gtex) return World3D.__gtex;
+        const c = document.createElement('canvas'); c.width = c.height = 256;
+        const g = c.getContext('2d');
+        g.fillStyle = '#e8d5a8'; g.fillRect(0, 0, 256, 256);
+        for (let i = 0; i < 700; i++) {
+            const s = 1 + Math.random() * 2.5;
+            g.fillStyle = Math.random() < 0.5 ? 'rgba(91,47,18,0.06)' : 'rgba(255,255,255,0.10)';
+            g.fillRect(Math.random() * 256, Math.random() * 256, s, s);
+        }
+        // pontinho nas interseções (como uma cotação de tabuleiro)
+        g.fillStyle = 'rgba(91,47,18,0.16)';
+        for (const cx of [0, 128, 256]) for (const cy of [0, 128, 256]) {
+            g.fillRect(cx - 1, cy - 1, 3, 3);
+        }
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        World3D.__gtex = tex;
+        return tex;
+    }
+
+    // árvores, pedras e capim fora do campo, determinísticos (seed fixo)
+    _buildScatter() {
+        const halfX = this.boardW / 2 + 0.25, halfZ = this.boardH / 2 + 0.25;
+        const rng = World3D._seed(7);
+        const leafMat = MatFactory.mat('#3f7a2e');
+        const leafMat2 = MatFactory.mat('#4f8f3a');
+        const trunkMat = MatFactory.mat('#5a3a1a');
+        const rockMat = MatFactory.mat('#8a8378');
+        const grassMat = MatFactory.mat('#6f9e4a');
+        const inBoard = (x, z) => Math.abs(x) < halfX + 0.5 && Math.abs(z) < halfZ + 0.5;
+        const inside = (x, z) => Math.abs(x) < halfX - 0.6 && Math.abs(z) < halfZ - 0.6;
+        let guard = 0;
+        let placed = 0;
+        while (placed < 26 && guard++ < 300) {
+            const x = (rng() * 2 - 1) * (halfX + 4.5);
+            const z = (rng() * 2 - 1) * (halfZ + 4.5);
+            if (inside(x, z)) continue;           // dentro do tabuleiro: não
+            if (inBoard(x, z)) continue;          // na borda do tabuleiro: não
+            const t = rng();
+            let obj;
+            if (t < 0.32) {
+                // árvore: tronco + 2 copas em cone
+                obj = new THREE.Group();
+                const trunk = mesh(GeomFactory.cyl(0.05, 0.08, 0.35, 6), trunkMat);
+                trunk.position.y = 0.18; obj.add(trunk);
+                const c1 = mesh(GeomFactory.cone(0.34, 0.6, 7), rng() < 0.5 ? leafMat : leafMat2);
+                c1.position.y = 0.68; obj.add(c1);
+                const c2 = mesh(GeomFactory.cone(0.22, 0.4, 7), leafMat2);
+                c2.position.y = 1.05; obj.add(c2);
+                obj.scale.setScalar(0.7 + rng() * 0.6);
+            } else if (t < 0.62) {
+                // pedra
+                obj = mesh(GeomFactory.icosa(0.14 + rng() * 0.2, 0), rockMat);
+                obj.scale.y = 0.6 + rng() * 0.3;
+                obj.rotation.y = rng() * Math.PI;
+                const wrap = new THREE.Group(); wrap.add(obj);
+                obj = wrap;
+            } else {
+                // capim: 3 folhas finas
+                obj = new THREE.Group();
+                for (let i = 0; i < 3; i++) {
+                    const b = mesh(GeomFactory.cone(0.02, 0.16 + rng() * 0.14, 4), grassMat);
+                    b.position.set((rng() - 0.5) * 0.1, 0.09, (rng() - 0.5) * 0.1);
+                    b.rotation.z = (rng() - 0.5) * 0.5;
+                    obj.add(b);
+                }
+            }
+            obj.position.set(x, 0, z);
+            this.groundGroup.add(obj);
+            placed++;
+        }
+    }
+
+    // PRNG determinístico (mulberry32) para o cenário não piscar no relayout
+    static _seed(a) {
+        return function () {
+            a |= 0; a = (a + 0x6D2B79F5) | 0;
+            let t = Math.imul(a ^ (a >>> 15), 1 | a);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
     }
 
     _addPortal(wx, wz, color, id) {

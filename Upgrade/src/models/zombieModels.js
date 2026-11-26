@@ -1,69 +1,130 @@
 /**
- * Modelos 3D dos zumbis. Partem da paleta original (body/head de cada tipo)
- * e constroem bonecos humanoides com variações por traço: chifres, coroa,
- * asas, costelas de esqueleto, cauda/cabeça de beb, armadura de gelo,
- * mochila TNT do bombista, bolhas do venenoso, transparência do fantasma.
+ * Modelos 3D dos zumbis — versão orgânica.
+ *
+ * Em vez de caixas, o boneco é montado com cápsulas e esferas (membros
+ * arredondados com pivô nas articulações), mandíbula, olhos fundos e a pose
+ * clássica de zumbi (braços esticados para a frente). Variações por traço:
+ * chifres, coroa, asas membranosas, costelas de esqueleto, cauda/cone de
+ * fantasma, mochila TNT do bombista, bolhas do venenoso, casca de gelo,
+ * transparência do fantasma.
+ *
+ * Todo modelo é construído em uma "célula" de 1 unidade, com a base no y=0.
+ * Zombie.js posiciona, anima (caminhada, balanço, morte) e escala por tipo.
  */
 const ZombieModels = {
     create(type) {
         const stats = ZOMBIE_STATS[type];
         const g = new THREE.Group();
-        const s = stats.size;                 // escala por tipo
-        const bodyMat = MatFactory.matUncached(stats.body, { flatShading: true });
-        const headMat = MatFactory.matUncached(stats.head, { flatShading: true });
+        const s = stats.size;
+
+        const bodyMat = MatFactory.matUncached(stats.body, {});
+        const headMat = MatFactory.matUncached(stats.head, {});
         g.userData.bodyMat = bodyMat;
         g.userData.headMat = headMat;
         g.userData.transparent = !!stats.ghost;
-
-        if (stats.ghost) { bodyMat.transparent = true; bodyMat.opacity = 0.62; headMat.transparent = true; headMat.opacity = 0.62; }
-        const legMat = MatFactory.mat(stats.skeletal ? '#f0ebd8' : '#2c1810', { flatShading: true });
+        if (stats.ghost) {
+            bodyMat.transparent = true; bodyMat.opacity = 0.6;
+            headMat.transparent = true; headMat.opacity = 0.6;
+        }
+        const legMat = MatFactory.mat(stats.skeletal ? '#e8e4d4' : '#3a2a18');
+        const darkMat = MatFactory.mat(shade(stats.body, -0.35));
+        const eyeMat = stats.skeletal || stats.ghost ? MatFactory.mat('#0a0a0a') : MatFactory.mat('#ffffff');
+        const pupilMat = MatFactory.mat('#000000');
 
         g.add(Models.shadow(0.3 * s));
 
-        // corpo (torso) em escala de tipo
-        const torso = boxAt(0.26 * s, 0.34 * s, 0.18 * s, 0, 0.34 * s, 0, bodyMat);
-        if (stats.bigHead) torso.scale.y = 0.8;
-        g.add(torso);
-
-        // pernas com pivô no quadril (para animar caminhada)
-        const legL = new THREE.Group(); const legR = new THREE.Group();
-        legL.position.set(-0.07 * s, 0.18 * s, 0); legR.position.set(0.07 * s, 0.18 * s, 0);
-        const lm = boxAt(0.09 * s, 0.2 * s, 0.09 * s, 0, -0.1 * s, 0, legMat);
-        const rm = boxAt(0.09 * s, 0.2 * s, 0.09 * s, 0, -0.1 * s, 0, legMat);
-        legL.add(lm); legR.add(rm); g.add(legL); g.add(legR);
-
-        // braços com pivô no ombro
-        const armL = new THREE.Group(); const armR = new THREE.Group();
-        armL.position.set(-0.17 * s, 0.44 * s, 0); armR.position.set(0.17 * s, 0.44 * s, 0);
-        armL.add(boxAt(0.08 * s, 0.24 * s, 0.08 * s, 0, -0.12 * s, 0, bodyMat));
-        armR.add(boxAt(0.08 * s, 0.24 * s, 0.08 * s, 0, -0.12 * s, 0, bodyMat));
-        g.add(armL); g.add(armR);
-
-        // cabeça
         const hr = (stats.bigHead ? 0.17 : 0.13) * s;
-        const head = sphAt(hr, 0, 0.62 * s + hr, 0, headMat);
-        g.add(head);
+        const hipY = 0.30 * s;
+        const neckY = 0.54 * s;
 
-        // olhos
-        const eyeMat = stats.skeletal || stats.ghost ? MatFactory.mat('#0a0a0a') : MatFactory.mat('#ffffff');
-        g.add(sphAt(hr * 0.16, -hr * 0.34, 0.62 * s + hr, hr * 0.82, eyeMat));
-        g.add(sphAt(hr * 0.16, hr * 0.34, 0.62 * s + hr, hr * 0.82, eyeMat));
-        if (!stats.skeletal && !stats.ghost) {
-            g.add(sphAt(hr * 0.08, -hr * 0.34, 0.62 * s + hr, hr * 0.94, MatFactory.mat('#000000')));
-            g.add(sphAt(hr * 0.08, hr * 0.34, 0.62 * s + hr, hr * 0.94, MatFactory.mat('#000000')));
+        // ---------- pernas com pivô no quadril ----------
+        const legL = new THREE.Group(); const legR = new THREE.Group();
+        legL.position.set(-0.085 * s, hipY, 0); legR.position.set(0.085 * s, hipY, 0);
+        if (!stats.ghost) {
+            const legGeo = GeomFactory.capTop(0.055 * s, 0.24 * s);
+            legL.add(mesh(legGeo, legMat));
+            legR.add(mesh(legGeo, legMat));
+            // pés (esferas achatadas)
+            const footGeo = GeomFactory.sph(0.062 * s, 8, 6);
+            for (const lg of [legL, legR]) {
+                const foot = mesh(footGeo, darkMat);
+                foot.scale.set(1.0, 0.6, 1.5);
+                foot.position.set(0, -(0.24 * s + 0.055 * s), 0.03 * s);
+                lg.add(foot);
+            }
+            g.add(legL); g.add(legR);
         }
 
-        const parts = { torso, head, legL, legR, armL, armR, extras: [] };
+        // ---------- quadril + torso (cápsula arredondada) ----------
+        const hips = sphAt(0.095 * s, 0, hipY, 0, darkMat);
+        hips.scale.set(1.1, 0.8, 0.9);
+        g.add(hips);
 
-        // esqueleto: costelas (barras no torso)
+        const torso = mesh(GeomFactory.cap(0.15 * s, 0.16 * s, 3, 9), bodyMat);
+        torso.scale.set(1.08, 1, 0.78);
+        torso.position.y = 0.42 * s;
+        g.add(torso);
+
+        // pescoço
+        const neck = sphAt(0.06 * s, 0, neckY - 0.02 * s, 0.01 * s, darkMat);
+        g.add(neck);
+
+        // ---------- braços com pivô no ombro (pose de zumbi: esticados) ----------
+        const armL = new THREE.Group(); const armR = new THREE.Group();
+        armL.position.set(-0.185 * s, 0.49 * s, 0.02 * s);
+        armR.position.set(0.185 * s, 0.49 * s, 0.02 * s);
+        const armGeo = GeomFactory.capTop(0.048 * s, 0.24 * s);
+        const handGeo = GeomFactory.sph(0.055 * s, 8, 6);
+        for (const arm of [armL, armR]) {
+            arm.add(mesh(armGeo, bodyMat));
+            const hand = mesh(handGeo, darkMat);
+            hand.scale.set(0.9, 0.9, 1.15);
+            hand.position.set(0, -(0.24 * s + 0.055 * s), 0.015 * s);
+            arm.add(hand);
+        }
+        g.add(armL); g.add(armR);
+
+        // ---------- cabeça com mandíbula e olhos ----------
+        const head = new THREE.Group();
+        head.position.set(0, neckY, 0.02 * s);
+        const skull = sphAt(hr, 0, hr * 0.95, 0, headMat);
+        skull.scale.set(0.92, 0.94, 0.95);
+        head.add(skull);
+        const jaw = mesh(GeomFactory.sph(hr * 0.5, 8, 6), headMat);
+        jaw.scale.set(0.85, 0.55, 1.1);
+        jaw.position.set(0, hr * 0.35, hr * 0.55);
+        head.add(jaw);
+        for (const sx of [-1, 1]) {
+            head.add(sphAt(hr * 0.16, sx * hr * 0.34, hr * 1.05, hr * 0.62, eyeMat));
+            if (!stats.skeletal && !stats.ghost) {
+                head.add(sphAt(hr * 0.09, sx * hr * 0.34, hr * 1.05, hr * 0.78, pupilMat));
+            }
+        }
+        g.add(head);
+
+        // fantasma: cauda esfarrapada no lugar de pernas
+        if (stats.ghost) {
+            const skirt = mesh(GeomFactory.cone(0.17 * s, 0.36 * s, 9), bodyMat);
+            skirt.rotation.x = Math.PI;
+            skirt.position.y = 0.34 * s;
+            g.add(skirt);
+        }
+
+        const parts = { torso, head, legL, legR, armL, armR, headTopY: neckY + hr * 1.9, extras: [] };
+
+        // ---------- esqueleto: costelas em anel ----------
         if (stats.skeletal) {
+            const ribMat = MatFactory.mat('#efe9d6');
             for (let i = 0; i < 3; i++) {
-                const bar = boxAt(0.24 * s, 0.015 * s, 0.19 * s, 0, 0.28 * s + i * 0.05 * s, 0, MatFactory.mat('#b7b0a0'));
-                g.add(bar);
+                const rib = mesh(GeomFactory.tor(0.135 * s, 0.018 * s, 10, 6), ribMat);
+                rib.rotation.x = Math.PI / 2;
+                rib.position.y = 0.36 * s + i * 0.07 * s;
+                rib.scale.set(1, 1, 0.85);
+                g.add(rib);
             }
         }
 
-        // gelo: cristais + casca translúcida
+        // ---------- gelo: casca translúcida + cristais ----------
         if (stats.frosty) {
             const shell = sphAt(0.22 * s, 0, 0.36 * s, 0, MatFactory.mat('#85b3d4', { transparent: true, opacity: 0.4 }));
             g.add(shell);
@@ -76,16 +137,24 @@ const ZombieModels = {
             parts.iceShell = shell;
         }
 
-        // bombista: mochila TNT
+        // ---------- bombista: mochila TNT nas costas ----------
         if (stats.bomb) {
-            const pack = boxAt(0.2 * s, 0.2 * s, 0.12 * s, 0, 0.36 * s, -0.14 * s, MatFactory.mat('#2c1810', { flatShading: true }));
+            const pack = mesh(GeomFactory.cap(0.09 * s, 0.14 * s, 2, 8), MatFactory.mat('#5d3516'));
+            pack.rotation.z = Math.PI / 2;   // deitado, atravessado nas costas
+            pack.position.set(0, 0.44 * s, -0.17 * s);
             g.add(pack);
-            const fuse = mesh(GeomFactory.cyl(0.01, 0.01, 0.1, 6), MatFactory.mat('#f1c40f', { emissive: '#f1c40f' }));
-            fuse.position.set(0.02, 0.5 * s, -0.14 * s); g.add(fuse);
-            g.add(sphAt(0.03 * s, 0.02, 0.56 * s, -0.14 * s, MatFactory.glow('#f1c40f')));
+            const band = mesh(GeomFactory.cyl(0.095 * s, 0.095 * s, 0.03 * s, 8), MatFactory.mat('#c0392b'));
+            band.rotation.z = Math.PI / 2;
+            band.position.set(0.06 * s, 0.44 * s, -0.17 * s);
+            g.add(band);
+            const fuse = mesh(GeomFactory.cyl(0.012 * s, 0.012 * s, 0.12 * s, 5), MatFactory.mat('#f1c40f', { emissive: '#f1c40f' }));
+            fuse.position.set(0.03 * s, 0.56 * s, -0.17 * s);
+            fuse.rotation.z = 0.5;
+            g.add(fuse);
+            g.add(sphAt(0.028 * s, 0.06 * s, 0.58 * s, -0.16 * s, MatFactory.glow('#ffd900')));
         }
 
-        // venenoso: bolhas orbitando (animadas por código)
+        // ---------- venenoso: bolhas orbitando ----------
         if (stats.poisonous) {
             const bubbles = new THREE.Group(); g.add(bubbles); parts.bubbles = bubbles;
             for (let i = 0; i < 3; i++) {
@@ -95,28 +164,35 @@ const ZombieModels = {
             }
         }
 
-        // voador: asas
+        // ---------- voador: asas membranosas ----------
         if (stats.flying) {
-            const wingMat = MatFactory.mat('#cfd8d0', { transparent: true, opacity: 0.75, side: THREE.DoubleSide });
-            const wl = boxAt(0.28 * s, 0.02, 0.16 * s, -0.24 * s, 0.46 * s, 0, wingMat);
-            const wr = boxAt(0.28 * s, 0.02, 0.16 * s, 0.24 * s, 0.46 * s, 0, wingMat);
-            g.add(wl); g.add(wr); parts.wingL = wl; parts.wingR = wr;
+            const wingMat = MatFactory.mat('#d8e6dc', { transparent: true, opacity: 0.72, side: THREE.DoubleSide });
+            const mkWing = (sx) => {
+                const w = new THREE.Group();
+                w.position.set(sx * 0.10 * s, 0.52 * s, -0.02 * s);
+                const m = mesh(GeomFactory.sph(0.30 * s, 9, 7), wingMat);
+                m.scale.set(1.1, 0.18, 0.5);
+                m.position.x = sx * 0.26 * s;
+                w.add(m);
+                g.add(w); return w;
+            };
+            parts.wingL = mkWing(-1); parts.wingR = mkWing(1);
         }
 
-        // chifres (tank, king)
+        // ---------- chifres (tank, king) ----------
         if (stats.horns) {
-            const hornMat = MatFactory.mat('#2c1810', { flatShading: true });
+            const hornMat = MatFactory.mat('#e8d5b0');
             for (const sx of [-1, 1]) {
                 const horn = mesh(GeomFactory.cone(0.03 * s, 0.14 * s, 6), hornMat);
-                horn.position.set(sx * hr * 0.7, 0.62 * s + hr * 1.5, 0);
-                horn.rotation.z = -sx * 0.4;
+                horn.position.set(sx * hr * 0.7, neckY + hr * 1.75, 0);
+                horn.rotation.z = -sx * 0.45;
                 g.add(horn);
             }
         }
 
-        // coroa (king)
+        // ---------- coroa (king) ----------
         if (stats.crown) {
-            const crown = new THREE.Group(); crown.position.y = 0.62 * s + hr * 1.7; g.add(crown);
+            const crown = new THREE.Group(); crown.position.y = neckY + hr * 1.95; g.add(crown);
             crown.add(mesh(GeomFactory.cyl(hr * 0.7, hr * 0.8, 0.08 * s, 8), MatFactory.mat('#f1c40f', { emissive: '#7a5c00' })));
             for (let i = 0; i < 5; i++) {
                 const a = (i / 5) * Math.PI * 2;
