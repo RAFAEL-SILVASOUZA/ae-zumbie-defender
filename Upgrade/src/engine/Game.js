@@ -300,7 +300,14 @@ class Game {
         });
 
         // --- canvas: hover + clique/tap ---
+        // O tap do celular é resolvido por duas vias: pointerup (navegadores
+        // com PointerEvents) e click como rede de segurança — navegadores que
+        // não suportam PointerEvents, ou que engolem o pointerup do toque ao
+        // interpretá-lo como gesto, ainda disparam click (mecânica do jogo
+        // 2D, que sempre funcionou no celular). O carimbo de tempo evita
+        // colocação dupla quando os dois caminhos disparam para o mesmo toque.
         let draggingFromShop = false;
+        let lastPointerPlacement = 0;
         this.canvas.addEventListener('pointermove', (e) => {
             if (e.pointerType === 'mouse') {
                 this.hoverCell = this.cellFromEvent(e);
@@ -310,63 +317,127 @@ class Game {
 
         const commit = (cell) => {
             this.hoverCell = cell;
-            this.commitTouchPlacement();
+            const acted = this.commitTouchPlacement();
             this.hoverCell = null;
+            return acted;
         };
 
-        this.canvas.addEventListener('pointerdown', (e) => {
-            if (e.button === 2 || e.altKey) return;      // orbit camera, não posicionar
-            this.hoverCell = this.cellFromEvent(e);
-        });
-        this.canvas.addEventListener('pointerup', (e) => {
-            if (e.button === 2 || e.altKey) return;
+        if (window.PointerEvent) {
+            this.canvas.addEventListener('pointerdown', (e) => {
+                if (e.button === 2 || e.altKey) return;      // orbit camera, não posicionar
+                this.hoverCell = this.cellFromEvent(e);
+            });
+            this.canvas.addEventListener('pointerup', (e) => {
+                if (e.button === 2 || e.altKey) return;
+                if (this.gameOver) return;
+                const cell = this.cellFromEvent(e);
+                if (commit(cell)) lastPointerPlacement = performance.now();
+                this.hoverCell = (e.pointerType === 'mouse') ? this.hoverCell : null;
+            });
+        }
+
+        // rede de segurança: coloca a torre pelo click do toque/click do mouse
+        // (suprimido se o pointerup acabou de resolver este mesmo toque)
+        this.canvas.addEventListener('click', (e) => {
+            if (e.altKey || e.button !== 0) return;
             if (this.gameOver) return;
+            if (performance.now() - lastPointerPlacement < 500) return;
             const cell = this.cellFromEvent(e);
             commit(cell);
-            this.hoverCell = (e.pointerType === 'mouse') ? this.hoverCell : null;
         });
 
         // --- arrastar da loja para o campo (mobile/desktop) ---
+        // Navegadores com PointerEvents usam a sequência pointer*; sem
+        // PointerEvent, usa TouchEvents (portado do jogo 2D, testado em
+        // celular) — os dois caminhos nunca coexistem no mesmo navegador.
         const overCanvas = (clientX, clientY) => {
             const r = this.canvas.getBoundingClientRect();
             return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
         };
-        document.querySelectorAll('.shop-item').forEach(item => {
-            let dragArmed = false, dragging = false, dragType = null;
-            item.addEventListener('pointerdown', (e) => {
-                dragging = false; dragArmed = false;
-                const type = item.dataset.type;
-                if (this.money < TOWER_STATS[type].cost) return;
-                dragArmed = true; dragType = type;
-            }, { passive: true });
-            item.addEventListener('pointermove', (e) => {
-                if (!dragArmed) return;
-                if (overCanvas(e.clientX, e.clientY)) {
-                    if (!dragging) {
-                        dragging = true; draggingFromShop = true;
-                        this.selectedTowerType = dragType;
-                        document.querySelectorAll('.shop-item').forEach(i => i.classList.remove('selected'));
-                        item.classList.add('selected');
-                        this.hideTowerMenu();
+        if (window.PointerEvent) {
+            document.querySelectorAll('.shop-item').forEach(item => {
+                let dragArmed = false, dragging = false, dragType = null;
+                item.addEventListener('pointerdown', (e) => {
+                    dragging = false; dragArmed = false;
+                    const type = item.dataset.type;
+                    if (this.money < TOWER_STATS[type].cost) return;
+                    dragArmed = true; dragType = type;
+                }, { passive: true });
+                item.addEventListener('pointermove', (e) => {
+                    if (!dragArmed) return;
+                    if (overCanvas(e.clientX, e.clientY)) {
+                        if (!dragging) {
+                            dragging = true; draggingFromShop = true;
+                            this.selectedTowerType = dragType;
+                            document.querySelectorAll('.shop-item').forEach(i => i.classList.remove('selected'));
+                            item.classList.add('selected');
+                            this.hideTowerMenu();
+                        }
+                        this.hoverCell = this.cellFromEvent(e);
+                    } else if (dragging) {
+                        this.hoverCell = null;
                     }
-                    this.hoverCell = this.cellFromEvent(e);
-                } else if (dragging) {
-                    this.hoverCell = null;
-                }
-            }, { passive: false });
-            const endDrag = (e) => {
-                dragArmed = false;
-                if (!dragging) return;
-                dragging = false; draggingFromShop = false;
-                const cell = overCanvas(e.clientX, e.clientY) ? this.cellFromEvent(e) : null;
-                commit(cell);
-            };
-            item.addEventListener('pointerup', endDrag);
-            item.addEventListener('pointercancel', () => {
-                dragArmed = false;
-                if (dragging) { dragging = false; draggingFromShop = false; this.hoverCell = null; }
+                }, { passive: false });
+                const endDrag = (e) => {
+                    dragArmed = false;
+                    if (!dragging) return;
+                    dragging = false; draggingFromShop = false;
+                    const cell = overCanvas(e.clientX, e.clientY) ? this.cellFromEvent(e) : null;
+                    commit(cell);
+                };
+                item.addEventListener('pointerup', endDrag);
+                item.addEventListener('pointercancel', () => {
+                    dragArmed = false;
+                    if (dragging) { dragging = false; draggingFromShop = false; this.hoverCell = null; }
+                });
             });
-        });
+        } else {
+            // fallback TouchEvents (igual ao 2D): arrastar da loja ao campo
+            document.querySelectorAll('.shop-item').forEach(item => {
+                let dragging = false;
+                item.addEventListener('touchstart', (e) => {
+                    dragging = false;
+                    item._dragArmed = false;
+                    if (e.touches.length !== 1) return;
+                    const type = item.dataset.type;
+                    if (this.money < TOWER_STATS[type].cost) return; // sem $ → tap normal
+                    item._dragArmed = true;
+                    item._dragType = type;
+                }, { passive: true });
+                item.addEventListener('touchmove', (e) => {
+                    if (!item._dragArmed || e.touches.length !== 1) return;
+                    const t = e.touches[0];
+                    if (overCanvas(t.clientX, t.clientY)) {
+                        if (!dragging) {
+                            dragging = true; draggingFromShop = true;
+                            this.selectedTowerType = item._dragType;
+                            document.querySelectorAll('.shop-item').forEach(i => i.classList.remove('selected'));
+                            item.classList.add('selected');
+                            this.hideTowerMenu();
+                        }
+                        this.hoverCell = this.cellFromEvent(t);
+                        e.preventDefault(); // impede a barra da loja de rolar durante a colocação
+                    } else if (dragging) {
+                        this.hoverCell = null;
+                        e.preventDefault();
+                    }
+                }, { passive: false });
+                const endDrag = (e) => {
+                    item._dragArmed = false;
+                    if (!dragging) return; // tap simples → deixa o click alternar a seleção
+                    dragging = false; draggingFromShop = false;
+                    if (e.cancelable) e.preventDefault(); // engole o click sintético pós-toque
+                    const t = e.changedTouches && e.changedTouches[0];
+                    const cell = (t && overCanvas(t.clientX, t.clientY)) ? this.cellFromEvent(t) : null;
+                    commit(cell);
+                };
+                item.addEventListener('touchend', endDrag, { passive: false });
+                item.addEventListener('touchcancel', () => {
+                    item._dragArmed = false;
+                    if (dragging) { dragging = false; draggingFromShop = false; this.hoverCell = null; }
+                });
+            });
+        }
 
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
@@ -384,9 +455,12 @@ class Game {
         });
     }
 
+    // Coloca/merge/abre menu na célula em hoverCell. Retorna true se AGIU
+    // (colocou, mergeou ou abriu menu) — usado p/ suprimir o click sintético
+    // que vem logo após o pointerup do mesmo toque.
     commitTouchPlacement() {
         const cell = this.hoverCell;
-        if (this.gameOver || !cell || !this.inRange(cell)) { this.hoverCell = null; return; }
+        if (this.gameOver || !cell || !this.inRange(cell)) { this.hoverCell = null; return false; }
         const { x, y } = cell;
         const existing = this.findTowerAt(x, y);
         if (existing) {
@@ -397,14 +471,15 @@ class Game {
             } else {
                 this.toggleTowerMenu(existing);
             }
-            return;
+            return true;
         }
         this.hideTowerMenu();
-        if (!this.selectedTowerType) return;
+        if (!this.selectedTowerType) return false;
         const cost = TOWER_STATS[this.selectedTowerType].cost;
-        if (this.money < cost) { this.flashFloating(x, y, 'Sem $!', '#c0392b'); return; }
-        if (!this.canPlaceTower(x, y)) { this.flashFloating(x, y, 'X', '#c0392b'); return; }
+        if (this.money < cost) { this.flashFloating(x, y, 'Sem $!', '#c0392b'); return false; }
+        if (!this.canPlaceTower(x, y)) { this.flashFloating(x, y, 'X', '#c0392b'); return false; }
         this.placeTower(x, y, this.selectedTowerType);
+        return true;
     }
 
     // ---------- start screen ----------
