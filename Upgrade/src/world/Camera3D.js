@@ -42,6 +42,7 @@ class Camera3D {
         this.fitRadius = 16;
         this.minRadiusFactor = 0.6;
         this.maxRadiusFactor = 1.7;
+        this.userZoom = 1;           // NUNCA deixe undefined: pinça divide por k e vira NaN
 
         this.target = new THREE.Vector3(0, 0, 0);
         this._dragging = false;
@@ -82,8 +83,7 @@ class Camera3D {
             if (need > rNeed) rNeed = need;
         }
         this.fitRadius = rNeed * margin;
-        if (this.userZoom == null) this.radius = this.fitRadius;
-        else this.radius = this.fitRadius * this.userZoom;
+        this.radius = this.fitRadius * this.userZoom;
         this.apply();
     }
 
