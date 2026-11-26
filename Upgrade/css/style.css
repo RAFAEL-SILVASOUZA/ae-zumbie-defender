@@ -113,6 +113,18 @@ body {
     color: #f1c40f; text-shadow: 2px 2px 0 #2c1810;
 }
 
+/* botão "voltar zoom ao normal": aparece só quando o zoom mudou
+   (pinça no celular / scroll no PC); toque volta ao enquadramento padrão */
+#zoom-reset-btn {
+    position: absolute; top: 8px; right: 10px; z-index: 17; display: none;
+    width: 40px; height: 40px; padding: 0; line-height: 38px;
+    font-size: 24px; text-align: center; cursor: pointer;
+    color: #fff; background: rgba(44, 24, 16, 0.72);
+    border: 2px solid rgba(240, 224, 189, 0.9); border-radius: 50%;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+}
+#zoom-reset-btn.show { display: block; }
+
 #round-banner {
     position: absolute; top: 40%; left: 50%; transform: translate(-50%,-50%) scale(0);
     font-family: 'Bangers', cursive; font-size: clamp(2.5rem, 9vw, 5rem);

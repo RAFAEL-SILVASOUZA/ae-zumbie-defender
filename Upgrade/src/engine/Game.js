@@ -453,6 +453,22 @@ class Game {
                 });
             }
         });
+
+        // botão "voltar zoom ao normal" (aparece quando o zoom mudou)
+        this.zoomResetBtn = document.getElementById('zoom-reset-btn');
+        if (this.zoomResetBtn) {
+            this.zoomResetBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.camera3d.resetZoom();
+            });
+        }
+    }
+
+    // mostra o botão de reset de zoom só quando o zoom saiu de 1x
+    updateZoomResetBtn() {
+        if (!this.zoomResetBtn) return;
+        const off = Math.abs(this.camera3d.userZoom - 1) > 0.01;
+        this.zoomResetBtn.classList.toggle('show', off);
     }
 
     // Coloca/merge/abre menu na célula em hoverCell. Retorna true se AGIU
@@ -1003,6 +1019,7 @@ class Game {
         this.drawHover();
         this.drawFloating();
         this.updatePauseOverlay();
+        this.updateZoomResetBtn();
         FX.update(realDt);
 
         this.world.render();

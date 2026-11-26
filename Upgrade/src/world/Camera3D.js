@@ -100,6 +100,14 @@ class Camera3D {
         this.camera.lookAt(this.target);
     }
 
+    // volta ao enquadramento padrão (zoom 1x); usado pelo botão da tela
+    resetZoom() {
+        this.userZoom = 1;
+        const world = window.World;
+        if (world) this.fit(world.boardW, world.boardH);
+        else { this.radius = this.fitRadius; this.apply(); }
+    }
+
     _bind() {
         const d = this.dom;
         d.addEventListener('contextmenu', e => e.preventDefault());
